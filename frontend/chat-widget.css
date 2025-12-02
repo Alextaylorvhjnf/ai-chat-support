@@ -1,10 +1,8 @@
-/* استایل ویجت چت */
 .ai-chat-widget-container {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     direction: rtl;
 }
 
-/* دکمه باز کردن/بستن چت */
 .ai-chat-toggle {
     position: fixed;
     bottom: 20px;
@@ -20,9 +18,6 @@
     box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3);
     z-index: 9999;
     transition: all 0.3s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
 
 .ai-chat-toggle:hover {
@@ -34,7 +29,6 @@
     transform: rotate(90deg);
 }
 
-/* پنجره چت */
 .ai-chat-window {
     position: fixed;
     bottom: 90px;
@@ -55,7 +49,6 @@
     display: none;
 }
 
-/* هدر چت */
 .ai-chat-header {
     background: linear-gradient(135deg, #007bff, #0056b3);
     color: white;
@@ -72,34 +65,6 @@
 
 .ai-chat-status {
     font-size: 12px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-}
-
-.ai-chat-status::before {
-    content: '';
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-}
-
-.ai-chat-status-connected::before {
-    background-color: #28a745;
-}
-
-.ai-chat-status-connecting::before {
-    background-color: #ffc107;
-    animation: pulse 1.5s infinite;
-}
-
-.ai-chat-status-disconnected::before {
-    background-color: #dc3545;
-}
-
-.ai-chat-status-human::before {
-    background-color: #17a2b8;
 }
 
 .ai-chat-close {
@@ -121,54 +86,50 @@
     background-color: rgba(255, 255, 255, 0.2);
 }
 
-/* بدنه چت */
 .ai-chat-body {
     flex: 1;
     padding: 15px;
     overflow-y: auto;
     background-color: #f8f9fa;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
 }
 
-/* پیام‌ها */
 .ai-chat-message {
     max-width: 85%;
     padding: 10px 15px;
     border-radius: 15px;
-    position: relative;
+    margin-bottom: 10px;
     animation: fadeIn 0.3s ease;
 }
 
 .ai-chat-message-user {
     background: linear-gradient(135deg, #007bff, #0056b3);
     color: white;
-    align-self: flex-end;
+    margin-left: auto;
     border-bottom-right-radius: 5px;
 }
 
 .ai-chat-message-ai {
     background: white;
     color: #333;
-    align-self: flex-start;
     border: 1px solid #e0e0e0;
+    margin-right: auto;
     border-bottom-left-radius: 5px;
 }
 
 .ai-chat-message-admin {
     background: linear-gradient(135deg, #28a745, #1e7e34);
     color: white;
-    align-self: flex-start;
+    margin-right: auto;
     border-bottom-left-radius: 5px;
 }
 
 .ai-chat-message-system {
     background: #f8f9fa;
     color: #6c757d;
-    align-self: center;
-    font-size: 12px;
     border: 1px dashed #dee2e6;
+    margin: 0 auto;
+    font-size: 12px;
+    text-align: center;
 }
 
 .ai-chat-message-error {
@@ -190,7 +151,6 @@
     word-wrap: break-word;
 }
 
-/* فوتر چت */
 .ai-chat-footer {
     padding: 15px;
     background: white;
@@ -241,7 +201,6 @@
     opacity: 0.6;
 }
 
-/* نشانگر تایپ */
 .ai-chat-typing {
     margin-top: 10px;
     font-size: 12px;
@@ -276,7 +235,6 @@
     animation-delay: 0.4s;
 }
 
-/* دکمه اتصال به اپراتور انسانی */
 .ai-chat-human-support {
     background: white;
     border: 1px solid #007bff;
@@ -308,7 +266,6 @@
     box-shadow: 0 4px 10px rgba(40, 167, 69, 0.3);
 }
 
-/* انیمیشن‌ها */
 @keyframes fadeIn {
     from {
         opacity: 0;
@@ -317,15 +274,6 @@
     to {
         opacity: 1;
         transform: translateY(0);
-    }
-}
-
-@keyframes pulse {
-    0%, 100% {
-        opacity: 1;
-    }
-    50% {
-        opacity: 0.5;
     }
 }
 
@@ -338,7 +286,6 @@
     }
 }
 
-/* اسکرول بار */
 .ai-chat-body::-webkit-scrollbar {
     width: 6px;
 }
@@ -357,7 +304,6 @@
     background: #a8a8a8;
 }
 
-/* ریسپانسیو */
 @media (max-width: 480px) {
     .ai-chat-window {
         width: calc(100vw - 40px);
