@@ -20,5 +20,5 @@
 ### 1. دریافت پروژه
 
 ```bash
-git clone https://github.com/yourusername/chatbot.git
+git clone https://github.com/Alextaylorvhjnf/chatbot.git
 cd chatbot
