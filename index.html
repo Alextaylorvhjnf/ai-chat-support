@@ -3,265 +3,206 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>چت‌بات هوشمند - نسخه مرورگر</title>
+    <title>چت‌بات هوشمند - اجرای کامل در مرورگر</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="chatbox.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;700&display=swap">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>🤖 چت‌بات هوشمند پیشرفته</h1>
-            <p class="subtitle">کاملاً در مرورگر اجرا می‌شود • بدون نیاز به سرور • حریم خصوصی کامل</p>
+            <h1><i class="fas fa-robot"></i> چت‌بات هوشمند کاملاً سمت‌کلاینت</h1>
+            <p class="subtitle">بدون نیاز به سرور • بدون API خارجی • پردازش ۱۰۰% در مرورگر</p>
         </header>
 
         <main>
-            <div class="demo-section">
-                <div class="features">
-                    <div class="feature-card">
-                        <div class="feature-icon">
-                            <i class="fas fa-brain"></i>
-                        </div>
-                        <h3>هوش مصنوعی لوکال</h3>
-                        <p>مدل WebLLM به صورت کامل در مرورگر شما اجرا می‌شود. هیچ داده‌ای به سرورهای خارجی ارسال نمی‌شود.</p>
+            <section class="features">
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-brain"></i>
                     </div>
-                    
-                    <div class="feature-card">
-                        <div class="feature-icon">
-                            <i class="fas fa-search"></i>
-                        </div>
-                        <h3>جستجوی هوشمند FAQ</h3>
-                        <p>سیستم سه‌مرحله‌ای ابتدا در بانک سوالات جستجو می‌کند و در صورت عدم یافتن، از مدل هوش مصنوعی استفاده می‌کند.</p>
+                    <h3>هوش مصنوعی لوکال</h3>
+                    <p>مدل زبانی WebLLM به طور کامل در مرورگر شما اجرا می‌شود</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-shield-alt"></i>
                     </div>
-                    
-                    <div class="feature-card">
-                        <div class="feature-icon">
-                            <i class="fas fa-shield-alt"></i>
-                        </div>
-                        <h3>امنیت و حریم خصوصی</h3>
-                        <p>تمامی پردازش‌ها در دستگاه شما انجام می‌شود. گفتگوها فقط در مرورگر شما ذخیره می‌شوند.</p>
+                    <h3>حریم خصوصی کامل</h3>
+                    <p>هیچ داده‌ای به سرورهای خارجی ارسال نمی‌شود</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-bolt"></i>
                     </div>
-                    
-                    <div class="feature-card">
-                        <div class="feature-icon">
-                            <i class="fas fa-plug"></i>
-                        </div>
-                        <h3>یکپارچه‌سازی آسان</h3>
-                        <p>به راحتی در هر وبسایتی با اضافه کردن یک خط اسکریپت، چت‌بات را نصب کنید.</p>
+                    <h3>سیستم پاسخ‌دهی هوشمند</h3>
+                    <p>ترکیب FAQ و هوش مصنوعی برای پاسخ‌های دقیق</p>
+                </div>
+                
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-mobile-alt"></i>
+                    </div>
+                    <h3>طراحی واکنش‌گرا</h3>
+                    <p>سازگار با موبایل، تبلت و دسکتاپ</p>
+                </div>
+            </section>
+
+            <section class="demo-section">
+                <h2><i class="fas fa-comments"></i> نسخه دموی چت‌بات</h2>
+                <div class="demo-info">
+                    <p>برای تست چت‌بات، روی دکمه پایین سمت راست صفحه کلیک کنید. چت‌بات ابتدا از FAQ جستجو می‌کند و اگر پاسخ مناسبی نیافت، از مدل هوش مصنوعی استفاده می‌کند.</p>
+                    <div class="note">
+                        <p><strong>توجه:</strong> بارگذاری اولیه مدل هوش مصنوعی ممکن است چند دقیقه طول بکشد (فقط بار اول). مدل در مرورگر شما ذخیره می‌شود.</p>
                     </div>
                 </div>
                 
-                <div class="demo-container">
-                    <h2><i class="fas fa-robot"></i> نسخه دموی چت‌بات</h2>
-                    <p class="demo-description">در این بخش می‌توانید مستقیماً با چت‌بات تعامل داشته باشید. چت‌بات در حال حاضر در حالت آزمایشی است.</p>
-                    
-                    <div id="chatDemo" class="chat-demo">
-                        <!-- چت باکس در اینجا رندر می‌شود -->
+                <div class="instructions">
+                    <h3><i class="fas fa-cogs"></i> راهنمای نصب سریع</h3>
+                    <div class="code-block">
+                        <code>&lt;script src="https://YOUR-DOMAIN.com/widget.js" defer&gt;&lt;/script&gt;</code>
                     </div>
-                    
-                    <div class="instructions">
-                        <h3><i class="fas fa-info-circle"></i> نحوه استفاده:</h3>
-                        <ol>
-                            <li>مدل هوش مصنوعی پس از بارگذاری صفحه به طور خودکار بارگیری می‌شود</li>
-                            <li>می‌توانید سوالات خود را در قسمت ورودی تایپ کنید</li>
-                            <li>سیستم ابتدا در FAQ جستجو می‌کند</li>
-                            <li>اگر پاسخ یافت نشد، مدل هوش مصنوعی پاسخ می‌دهد</li>
-                            <li>تاریخچه گفتگو در localStorage ذخیره می‌شود</li>
-                        </ol>
+                    <p>کد بالا را در بخش <code>&lt;head&gt;</code> سایت خود قرار دهید.</p>
+                </div>
+            </section>
+
+            <section class="technical-info">
+                <h2><i class="fas fa-code"></i> اطلاعات فنی</h2>
+                <div class="tech-grid">
+                    <div class="tech-item">
+                        <h4><i class="fas fa-database"></i> سیستم FAQ</h4>
+                        <p>جستجوی شباهت متنی با الگوریتم Cosine Similarity</p>
+                    </div>
+                    <div class="tech-item">
+                        <h4><i class="fas fa-layer-group"></i> معماری سه‌لایه</h4>
+                        <p>۱. جستجوی FAQ → ۲. پاسخ FAQ → ۳. پاسخ هوش مصنوعی</p>
+                    </div>
+                    <div class="tech-item">
+                        <h4><i class="fas fa-save"></i> ذخیره‌سازی محلی</h4>
+                        <p>تاریخچه گفتگو در LocalStorage ذخیره می‌شود</p>
+                    </div>
+                    <div class="tech-item">
+                        <h4><i class="fas fa-palette"></i> تم روشن/تیره</h4>
+                        <p>سازگار با تنظیمات سیستم کاربر</p>
                     </div>
                 </div>
-            </div>
-            
-            <div class="integration-section">
-                <h2><i class="fas fa-code"></i> روش‌های یکپارچه‌سازی</h2>
-                
-                <div class="integration-methods">
-                    <div class="method-card">
-                        <h3>وردپرس</h3>
-                        <p>برای اضافه کردن به وردپرس، کد زیر را در footer.php یا با افزونه‌ای مثل "Insert Headers and Footers" قرار دهید:</p>
-                        <pre><code>&lt;script src="https://your-domain.com/widget.js" defer&gt;&lt;/script&gt;</code></pre>
-                    </div>
-                    
-                    <div class="method-card">
-                        <h3>هر وبسایت HTML</h3>
-                        <p>کد زیر را قبل از تگ &lt;/body&gt; قرار دهید:</p>
-                        <pre><code>&lt;script src="widget.js" defer&gt;&lt;/script&gt;</code></pre>
-                    </div>
-                    
-                    <div class="method-card">
-                        <h3>سیستم‌های مدیریت محتوا</h3>
-                        <p>کد ویجت را در قسمت هدر یا فوتر قالب خود قرار دهید. در صورت نیاز به سفارشی‌سازی، فایل widget.js را ویرایش کنید.</p>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="configuration-section">
-                <h2><i class="fas fa-cogs"></i> پیکربندی و تنظیمات</h2>
-                
-                <div class="config-options">
-                    <div class="config-card">
-                        <h3>ویرایش FAQ</h3>
-                        <p>فایل <code>faq.json</code> را باز کرده و سوالات و پاسخ‌های جدید را اضافه کنید.</p>
-                        <a href="#" class="btn" id="viewFaqBtn">مشاهده FAQ فعلی</a>
-                    </div>
-                    
-                    <div class="config-card">
-                        <h3>تغییر مدل WebLLM</h3>
-                        <p>در فایل <code>main.js</code> قسمت مربوط به مدل را پیدا کرده و مدل موردنظر خود را تنظیم کنید.</p>
-                    </div>
-                    
-                    <div class="config-card">
-                        <h3>سفارشی‌سازی استایل</h3>
-                        <p>فایل‌های <code>style.css</code> و <code>chatbox.css</code> را برای تغییر ظاهر چت‌بات ویرایش کنید.</p>
-                    </div>
-                </div>
-            </div>
+            </section>
         </main>
-        
+
         <footer>
-            <p>چت‌بات هوشمند پیشرفته • کاملاً در مرورگر اجرا می‌شود • نسخه ۱.۰</p>
+            <p>چت‌بات هوشمند سمت‌کلاینت • ساخته شده با WebLLM</p>
             <p class="footer-links">
-                <a href="#" id="clearChatBtn">پاک کردن تاریخچه چت</a> | 
-                <a href="#" id="toggleThemeBtn">تغییر تم (روشن/تیره)</a> | 
-                <a href="#" id="resetBtn">بازنشانی تنظیمات</a>
+                <a href="#" onclick="showInstructions()">راهنمای نصب</a> • 
+                <a href="#" onclick="showFAQ()">مدیریت FAQ</a> • 
+                <a href="#" onclick="toggleTheme()">تغییر تم</a>
             </p>
         </footer>
     </div>
 
-    <!-- ویجت چت (به صورت ثابت در صفحه نمایش داده می‌شود) -->
-    <div id="chatWidgetContainer"></div>
-    
-    <!-- مدال برای نمایش FAQ -->
-    <div id="faqModal" class="modal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h2>سوالات متداول (FAQ)</h2>
-                <span class="close-modal">&times;</span>
-            </div>
-            <div class="modal-body">
-                <div id="faqList"></div>
-                <div class="modal-actions">
-                    <button id="addFaqBtn" class="btn">افزودن سوال جدید</button>
-                    <button id="exportFaqBtn" class="btn">خروجی JSON</button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- چت‌بات ویجت به صورت دستی در این صفحه اضافه شده -->
+    <div id="chatbot-container"></div>
 
-    <script src="https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.32/lib/index.js"></script>
     <script src="similarity.js"></script>
     <script src="main.js"></script>
     <script>
-        // بارگذاری ویجت چت
+        // بارگذاری ویجت در این صفحه
         document.addEventListener('DOMContentLoaded', function() {
-            // ایجاد ویجت چت
-            const chatWidget = document.createElement('div');
-            chatWidget.id = 'chatWidget';
-            document.getElementById('chatWidgetContainer').appendChild(chatWidget);
-            
-            // بارگذاری چت باکس دمو
-            loadChatDemo();
-            
-            // مدیریت رویدادهای دکمه‌ها
-            document.getElementById('viewFaqBtn').addEventListener('click', function(e) {
-                e.preventDefault();
-                showFaqModal();
-            });
-            
-            document.getElementById('clearChatBtn').addEventListener('click', function(e) {
-                e.preventDefault();
-                if (confirm('آیا مطمئن هستید که می‌خواهید تمام تاریخچه چت را پاک کنید؟')) {
-                    localStorage.removeItem('chatHistory');
-                    alert('تاریخچه چت پاک شد.');
-                }
-            });
-            
-            document.getElementById('toggleThemeBtn').addEventListener('click', function(e) {
-                e.preventDefault();
-                document.body.classList.toggle('dark-theme');
-                const isDark = document.body.classList.contains('dark-theme');
-                localStorage.setItem('chatTheme', isDark ? 'dark' : 'light');
-                alert('تم تغییر کرد. صفحه را رفرش کنید.');
-            });
-            
-            document.getElementById('resetBtn').addEventListener('click', function(e) {
-                e.preventDefault();
-                if (confirm('آیا مطمئن هستید که می‌خواهید تمام تنظیمات را به حالت پیش‌فرض بازنشانی کنید؟')) {
-                    localStorage.clear();
-                    alert('تنظیمات بازنشانی شد. صفحه را رفرش کنید.');
-                }
-            });
-            
-            // بارگذاری تم ذخیره شده
-            const savedTheme = localStorage.getItem('chatTheme');
-            if (savedTheme === 'dark') {
-                document.body.classList.add('dark-theme');
-            }
+            loadChatbotWidget();
         });
         
-        function loadChatDemo() {
-            // این تابع چت‌بات دمو را در صفحه اصلی بارگذاری می‌کند
-            const chatDemo = document.getElementById('chatDemo');
-            chatDemo.innerHTML = `
-                <div class="chat-container demo-chat">
-                    <div class="chat-header">
-                        <h3><i class="fas fa-robot"></i> دستیار هوشمند</h3>
-                        <span class="chat-status" id="demoStatus">در حال بارگیری مدل...</span>
+        function loadChatbotWidget() {
+            const container = document.getElementById('chatbot-container');
+            container.innerHTML = `
+                <div class="chatbot-wrapper">
+                    <div class="chatbot-toggle-btn">
+                        <i class="fas fa-comment-dots"></i>
+                        <span class="notification-badge">1</span>
                     </div>
-                    <div class="chat-messages" id="demoMessages">
-                        <div class="message bot-message">
-                            <div class="avatar">🤖</div>
-                            <div class="message-content">
-                                <p>سلام! من دستیار هوشمند شما هستم. لطفاً کمی صبر کنید تا مدل هوش مصنوعی بارگیری شود...</p>
-                                <span class="message-time">هم اکنون</span>
+                    <div class="chatbot-window hidden">
+                        <div class="chatbot-header">
+                            <div class="chatbot-title">
+                                <i class="fas fa-robot"></i>
+                                <span>چت‌بات هوشمند</span>
+                            </div>
+                            <div class="chatbot-actions">
+                                <button class="btn-icon" id="theme-toggle">
+                                    <i class="fas fa-moon"></i>
+                                </button>
+                                <button class="btn-icon" id="clear-chat">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                <button class="btn-icon" id="minimize-chat">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <div class="chatbot-body">
+                            <div class="chatbot-messages" id="chat-messages">
+                                <div class="message bot">
+                                    <div class="avatar">
+                                        <i class="fas fa-robot"></i>
+                                    </div>
+                                    <div class="content">
+                                        <div class="text">سلام! من چت‌بات هوشمند شما هستم. چطور می‌توانم کمک‌تان کنم؟</div>
+                                        <div class="timestamp">همین حالا</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="chatbot-footer">
+                            <div class="input-group">
+                                <input type="text" id="chat-input" placeholder="پیام خود را بنویسید..." autocomplete="off">
+                                <button id="send-btn">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                            </div>
+                            <div class="chatbot-options">
+                                <button class="option-btn">
+                                    <i class="fas fa-paperclip"></i> فایل
+                                </button>
+                                <button class="option-btn">
+                                    <i class="far fa-smile"></i> ایموجی
+                                </button>
+                                <button class="option-btn" id="faq-toggle">
+                                    <i class="fas fa-question-circle"></i> FAQ
+                                </button>
                             </div>
                         </div>
                     </div>
-                    <div class="chat-input-container">
-                        <input type="text" id="demoInput" placeholder="سوال خود را اینجا تایپ کنید..." disabled>
-                        <button id="demoSendBtn" class="send-btn" disabled><i class="fas fa-paper-plane"></i></button>
-                        <button class="attach-btn" id="demoAttachBtn"><i class="fas fa-paperclip"></i></button>
-                    </div>
                 </div>
             `;
+            
+            // استایل‌های اضافی برای این صفحه
+            const style = document.createElement('style');
+            style.textContent = `
+                .chatbot-wrapper {
+                    position: fixed;
+                    bottom: 20px;
+                    right: 20px;
+                    z-index: 10000;
+                    font-family: 'Vazirmatn', sans-serif;
+                }
+                .hidden {
+                    display: none !important;
+                }
+            `;
+            document.head.appendChild(style);
         }
         
-        function showFaqModal() {
-            // بارگذاری FAQ و نمایش در مدال
-            fetch('faq.json')
-                .then(response => response.json())
-                .then(faqData => {
-                    let faqHtml = '<div class="faq-items">';
-                    faqData.forEach((item, index) => {
-                        faqHtml += `
-                            <div class="faq-item">
-                                <h4>سوال ${index + 1}: ${item.question}</h4>
-                                <p>پاسخ: ${item.answer}</p>
-                            </div>
-                        `;
-                    });
-                    faqHtml += '</div>';
-                    
-                    document.getElementById('faqList').innerHTML = faqHtml;
-                    document.getElementById('faqModal').style.display = 'block';
-                    
-                    // رویداد بستن مدال
-                    document.querySelector('.close-modal').addEventListener('click', function() {
-                        document.getElementById('faqModal').style.display = 'none';
-                    });
-                    
-                    // رویداد کلیک خارج از مدال
-                    window.addEventListener('click', function(event) {
-                        const modal = document.getElementById('faqModal');
-                        if (event.target === modal) {
-                            modal.style.display = 'none';
-                        }
-                    });
-                })
-                .catch(error => {
-                    console.error('خطا در بارگذاری FAQ:', error);
-                    document.getElementById('faqList').innerHTML = '<p>خطا در بارگذاری سوالات متداول</p>';
-                });
+        function showInstructions() {
+            alert('برای نصب، فایل widget.js را در وبسایت خود قرار دهید.\n\nمثال: <script src="https://yourdomain.com/widget.js" defer></script>');
+        }
+        
+        function showFAQ() {
+            alert('برای مدیریت FAQ، فایل faq.json را ویرایش کنید. ساختار آن آرایه‌ای از objects با کلیدهای question و answer است.');
+        }
+        
+        function toggleTheme() {
+            document.body.classList.toggle('dark-theme');
+            localStorage.setItem('chatbot-theme', document.body.classList.contains('dark-theme') ? 'dark' : 'light');
         }
     </script>
 </body>
