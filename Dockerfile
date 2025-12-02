@@ -1,24 +1,45 @@
-# استفاده از image Node.js
+# Use Node.js LTS
 FROM node:18-alpine
 
-# تنظیم دایرکتوری کاری
+# Create app directory
 WORKDIR /app
 
-# کپی package.json از backend
-COPY backend/package*.json ./
+# Install dependencies for build
+RUN apk add --no-cache python3 make g++
 
-# نصب dependencies
-RUN npm install --production
+# Copy package files
+COPY backend/package*.json ./backend/
 
-# کپی تمام فایل‌های backend
-COPY backend/ .
+# Install backend dependencies
+RUN cd backend && npm install --production
 
-# کپی فایل‌های frontend و telegram
-COPY frontend/ ./frontend/
-COPY telegram/ ./telegram/
+# Copy backend source code
+COPY backend/src ./backend/src
+COPY backend/.env.example ./backend/.env
 
-# پورت را اکسپوز کن
+# Copy frontend files
+COPY frontend ./frontend
+
+# Create public directory for static files
+RUN mkdir -p ./backend/public
+COPY frontend/widget ./backend/public/widget
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs
+RUN adduser -S chatbot -u 1001
+
+# Change ownership
+RUN chown -R chatbot:nodejs /app
+
+# Switch to non-root user
+USER chatbot
+
+# Expose port
 EXPOSE 3000
 
-# کامند شروع
-CMD ["node", "server.js"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "const http = require('http'); const req = http.get('http://localhost:3000/health', (res) => { process.exit(res.statusCode === 200 ? 0 : 1); }); req.on('error', () => process.exit(1));"
+
+# Start command
+CMD ["node", "backend/src/server.js"]
