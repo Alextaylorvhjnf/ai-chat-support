@@ -340,4 +340,542 @@ class TelegramBotManager {
     this.bot.start((ctx) => {
       const welcomeMessage = `👨‍💼 پنل اپراتور پشتیبانی آنلاین\n\n`
         + `شما به عنوان اپراتور انسانی متصل شدید.\n`
-        + `پیام‌های کاربران به صورت خودکار برای شما ار
+        + `پیام‌های کاربران به صورت خودکار برای شما ارسال می‌شود.\n\n`
+        + `دستورات:\n`
+        + `/sessions - مشاهده جلسات فعال\n`
+        + `/stats - آمار سیستم\n`
+        + `/help - راهنمایی\n\n`
+        + `برای پاسخ به کاربر، فقط پیام خود را بنویسید.`;
+      
+      ctx.reply(welcomeMessage);
+    });
+
+    // Sessions command
+    this.bot.command('sessions', (ctx) => {
+      if (ctx.from.id.toString() !== this.adminId.toString()) {
+        return ctx.reply('⚠️ شما دسترسی لازم را ندارید.');
+      }
+
+      const activeSessions = Array.from(global.sessionManager.sessions.values())
+        .filter(session => session.connectedToHuman && 
+                (new Date() - session.lastActivity) < 30 * 60 * 1000); // Active in last 30 minutes
+      
+      if (activeSessions.length === 0) {
+        return ctx.reply('📭 هیچ جلسه فعالی وجود ندارد.');
+      }
+
+      let message = `📊 جلسات فعال (${activeSessions.length}):\n\n`;
+      
+      activeSessions.forEach((session, index) => {
+        const duration = Math.floor((new Date() - session.createdAt) / (1000 * 60));
+        const messageCount = session.messages.length;
+        
+        message += `${index + 1}. جلسه: ${session.id.substring(0, 8)}...\n`;
+        message += `   💬 پیام‌ها: ${messageCount}\n`;
+        message += `   ⏱️ مدت: ${duration} دقیقه\n`;
+        message += `   👤 اپراتور: ${session.operatorId === ctx.from.id ? 'شما' : 'دیگر'}\n\n`;
+      });
+
+      ctx.reply(message);
+    });
+
+    // Stats command
+    this.bot.command('stats', (ctx) => {
+      if (ctx.from.id.toString() !== this.adminId.toString()) {
+        return ctx.reply('⚠️ شما دسترسی لازم را ندارید.');
+      }
+
+      const stats = {
+        totalSessions: global.sessionManager.sessions.size,
+        activeSessions: Array.from(global.sessionManager.sessions.values())
+          .filter(s => (new Date() - s.lastActivity) < 30 * 60 * 1000).length,
+        humanConnected: Array.from(global.sessionManager.sessions.values())
+          .filter(s => s.connectedToHuman).length,
+        operatorCount: this.operatorSessions.size
+      };
+      
+      const statsMessage = `📈 آمار سیستم:\n\n`
+        + `⏰ زمان: ${new Date().toLocaleTimeString('fa-IR')}\n`
+        + `📅 تاریخ: ${new Date().toLocaleDateString('fa-IR')}\n\n`
+        + `📊 آمار جلسات:\n`
+        + `   • کل جلسات: ${stats.totalSessions}\n`
+        + `   • جلسات فعال: ${stats.activeSessions}\n`
+        + `   • متصل به اپراتور: ${stats.humanConnected}\n`
+        + `   • اپراتورهای آنلاین: ${stats.operatorCount}\n\n`
+        + `🤖 وضعیت AI: ${GROQ_API_KEY ? 'فعال' : 'غیرفعال'}`;
+
+      ctx.reply(statsMessage);
+    });
+
+    // Help command
+    this.bot.command('help', (ctx) => {
+      const helpMessage = `📖 راهنمای اپراتور:\n\n`
+        + `1. کاربران از طریق وبسایت با سیستم چت می‌کنند.\n`
+        + `2. اگر AI نتواند پاسخ دهد، به شما متصل می‌شوند.\n`
+        + `3. برای پاسخ، فقط پیام خود را بنویسید.\n\n`
+        + `🔧 دستورات:\n`
+        + `/start - شروع کار\n`
+        + `/sessions - لیست جلسات\n`
+        + `/stats - آمار سیستم\n`
+        + `/help - این راهنما\n\n`
+        + `💡 نکته: هر پیامی که می‌نویسید به آخرین جلسه فعال شما ارسال می‌شود.`;
+
+      ctx.reply(helpMessage);
+    });
+  }
+
+  async handleOperatorMessage(ctx) {
+    const operatorId = ctx.from.id;
+    const messageText = ctx.message.text;
+    
+    // Skip commands
+    if (messageText.startsWith('/')) {
+      return;
+    }
+
+    // Check if operator is authorized (only admin)
+    if (operatorId.toString() !== this.adminId.toString()) {
+      return ctx.reply('⚠️ شما دسترسی لازم برای پاسخ‌گویی ندارید.');
+    }
+
+    // Get active session for this operator
+    const sessionId = this.operatorSessions.get(operatorId);
+    if (!sessionId) {
+      return ctx.reply('⚠️ شما هیچ جلسه فعالی ندارید. منتظر درخواست کاربر باشید.');
+    }
+
+    // Send message to user via WebSocket
+    const success = await this.sendToUser(sessionId, messageText, operatorId);
+    
+    if (success) {
+      // Confirm to operator
+      ctx.reply(`✅ پیام شما ارسال شد.\n\n`
+        + `📝 برای پایان گفتگو، از دستور /end استفاده کنید.\n`
+        + `🔗 جلسه: ${sessionId.substring(0, 8)}...`);
+    } else {
+      ctx.reply('❌ خطا در ارسال پیام به کاربر.');
+    }
+  }
+
+  async connectToOperator(sessionId, userInfo = {}) {
+    try {
+      console.log(`🔗 Connecting session ${sessionId.substring(0, 8)}... to operator`);
+      
+      // Connect session to operator
+      const session = global.sessionManager.connectToHuman(sessionId, this.adminId, this.adminId);
+      if (!session) {
+        throw new Error('Session not found');
+      }
+      
+      // Track operator session
+      this.operatorSessions.set(this.adminId, sessionId);
+      this.sessionConnections.set(sessionId, this.adminId);
+      
+      // Prepare user message for operator
+      const userMessage = `🔔 درخواست اتصال جدید:\n\n`
+        + `🎫 کد جلسه: ${sessionId}\n`
+        + `👤 کاربر: ${userInfo.name || 'کاربر سایت'}\n`
+        + `📧 ایمیل: ${userInfo.email || 'ندارد'}\n`
+        + `📱 تلفن: ${userInfo.phone || 'ندارد'}\n`
+        + `🌐 صفحه: ${userInfo.page || 'نامشخص'}\n\n`;
+      
+      // Add last user message if exists
+      if (session.messages.length > 0) {
+        const lastUserMessage = session.messages
+          .filter(m => m.role === 'user')
+          .slice(-1)[0];
+        
+        if (lastUserMessage) {
+          userMessage += `📝 آخرین پیام کاربر:\n"${lastUserMessage.content}"\n\n`;
+        }
+      }
+      
+      userMessage += `💬 برای پاسخ، پیام خود را بنویسید...`;
+      
+      // Send notification to operator
+      await this.sendToAdmin(userMessage);
+      
+      // Notify user via WebSocket
+      this.io.to(sessionId).emit('operator-connected', {
+        message: '✅ اپراتور انسانی متصل شد. در حال حاضر می‌توانید چت کنید.',
+        operatorName: 'پشتیبان آنلاین',
+        timestamp: new Date().toISOString()
+      });
+
+      console.log(`✅ Session ${sessionId.substring(0, 8)}... connected to operator`);
+      
+      return {
+        success: true,
+        operatorId: this.adminId,
+        sessionId: sessionId
+      };
+
+    } catch (error) {
+      console.error('❌ Error connecting to operator:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  async sendToOperator(sessionId, message) {
+    try {
+      console.log(`📨 Forwarding message from session ${sessionId.substring(0, 8)}... to operator`);
+      
+      const session = global.sessionManager.getSession(sessionId);
+      if (!session || !session.connectedToHuman) {
+        throw new Error('Session not connected to operator');
+      }
+
+      const operatorMessage = `📩 پیام از کاربر:\n\n`
+        + `🎫 جلسه: ${sessionId.substring(0, 8)}...\n`
+        + `👤 کاربر: ${session.userInfo?.name || 'کاربر سایت'}\n`
+        + `💬 پیام:\n"${message}"\n\n`
+        + `✏️ برای پاسخ، پیام خود را بنویسید...`;
+
+      await this.bot.telegram.sendMessage(this.adminId, operatorMessage);
+      
+      // Add user message to session
+      global.sessionManager.addMessage(sessionId, 'user', message);
+      
+      return {
+        success: true,
+        message: 'پیام ارسال شد'
+      };
+
+    } catch (error) {
+      console.error('❌ Error sending to operator:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  async sendToUser(sessionId, message, operatorId) {
+    try {
+      console.log(`📤 Sending message to session ${sessionId.substring(0, 8)}... from operator`);
+      
+      // Send via WebSocket
+      this.io.to(sessionId).emit('operator-message', {
+        from: 'operator',
+        message: message,
+        timestamp: new Date().toISOString(),
+        operatorId: operatorId
+      });
+
+      // Add operator message to session
+      global.sessionManager.addMessage(sessionId, 'operator', message);
+      
+      return true;
+
+    } catch (error) {
+      console.error('❌ Error sending to user:', error.message);
+      return false;
+    }
+  }
+
+  async sendToAdmin(message) {
+    try {
+      if (!this.bot) {
+        throw new Error('Telegram bot not initialized');
+      }
+      
+      await this.bot.telegram.sendMessage(this.adminId, message, {
+        parse_mode: 'HTML'
+      });
+      return true;
+    } catch (error) {
+      console.error('❌ Error sending to admin:', error.message);
+      return false;
+    }
+  }
+
+  disconnectOperator(sessionId) {
+    const operatorId = this.sessionConnections.get(sessionId);
+    if (operatorId) {
+      this.operatorSessions.delete(operatorId);
+      this.sessionConnections.delete(sessionId);
+      global.sessionManager.disconnectFromHuman(sessionId);
+      
+      // Notify user
+      this.io.to(sessionId).emit('operator-disconnected', {
+        message: 'اپراتور از گفتگو خارج شد. اگر سوال دیگری دارید بپرسید.'
+      });
+      
+      return true;
+    }
+    return false;
+  }
+}
+
+// Initialize services
+const aiService = new AIService();
+const sessionManager = new SessionManager();
+let telegramBot = null;
+
+// Make them globally accessible
+global.aiService = aiService;
+global.sessionManager = sessionManager;
+
+// Initialize Telegram bot
+if (TELEGRAM_BOT_TOKEN && ADMIN_TELEGRAM_ID) {
+  telegramBot = new TelegramBotManager(io);
+  global.telegramBot = telegramBot;
+} else {
+  console.warn('⚠️ Telegram bot will not be initialized due to missing configuration');
+}
+
+// WebSocket Handling
+const activeConnections = new Map();
+
+io.on('connection', (socket) => {
+  console.log('🌐 New WebSocket connection:', socket.id);
+
+  socket.on('join-session', (sessionId) => {
+    socket.join(sessionId);
+    activeConnections.set(socket.id, sessionId);
+    console.log(`🔗 Client ${socket.id.substring(0, 8)} joined session ${sessionId.substring(0, 8)}...`);
+  });
+
+  socket.on('disconnect', () => {
+    const sessionId = activeConnections.get(socket.id);
+    if (sessionId) {
+      socket.leave(sessionId);
+      activeConnections.delete(socket.id);
+      console.log(`🔌 Client ${socket.id.substring(0, 8)} disconnected from session ${sessionId.substring(0, 8)}...`);
+    }
+  });
+
+  socket.on('error', (error) => {
+    console.error('WebSocket error:', error);
+  });
+});
+
+// API Endpoints
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, sessionId } = req.body;
+    
+    if (!message || !sessionId) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'پیام و شناسه جلسه الزامی است' 
+      });
+    }
+    
+    console.log(`💬 Chat request from ${sessionId.substring(0, 8)}...: "${message.substring(0, 50)}..."`);
+    
+    // Get or create session
+    let session = sessionManager.getSession(sessionId);
+    if (!session) {
+      session = sessionManager.createSession(sessionId);
+    }
+    
+    // Add user message
+    sessionManager.addMessage(sessionId, 'user', message);
+    
+    // Get AI response
+    const aiResponse = await aiService.getAIResponse(message);
+    
+    if (aiResponse.success) {
+      sessionManager.addMessage(sessionId, 'assistant', aiResponse.message);
+      
+      res.json({
+        success: true,
+        message: aiResponse.message,
+        requiresHuman: false,
+        sessionId: sessionId
+      });
+    } else {
+      sessionManager.addMessage(sessionId, 'system', 'AI نتوانست پاسخ دهد - پیشنهاد اتصال به اپراتور');
+      
+      res.json({
+        success: false,
+        message: aiResponse.message,
+        requiresHuman: true,
+        sessionId: sessionId
+      });
+    }
+  } catch (error) {
+    console.error('❌ Chat API error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'خطا در پردازش درخواست',
+      requiresHuman: true 
+    });
+  }
+});
+
+app.post('/api/connect-human', async (req, res) => {
+  try {
+    const { sessionId, userInfo } = req.body;
+    
+    if (!sessionId) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'شناسه جلسه الزامی است' 
+      });
+    }
+    
+    console.log(`👤 Human connection requested for ${sessionId.substring(0, 8)}...`);
+    
+    // Get session
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+      return res.status(404).json({ 
+        success: false,
+        error: 'جلسه پیدا نشد' 
+      });
+    }
+    
+    // Check if Telegram bot is available
+    if (!telegramBot) {
+      return res.status(503).json({ 
+        success: false,
+        error: 'سرویس اپراتور در دسترس نیست' 
+      });
+    }
+    
+    // Connect to operator
+    const connectionResult = await telegramBot.connectToOperator(sessionId, userInfo);
+    
+    if (connectionResult.success) {
+      res.json({ 
+        success: true, 
+        message: '✅ در حال اتصال به اپراتور انسانی...',
+        operatorConnected: true,
+        sessionId: sessionId
+      });
+    } else {
+      res.status(500).json({ 
+        success: false, 
+        error: '❌ خطا در اتصال به اپراتور',
+        details: connectionResult.error
+      });
+    }
+  } catch (error) {
+    console.error('❌ Connect human API error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'خطا در اتصال به اپراتور',
+      details: error.message 
+    });
+  }
+});
+
+app.post('/api/send-to-operator', async (req, res) => {
+  try {
+    const { sessionId, message } = req.body;
+    
+    if (!sessionId || !message) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'شناسه جلسه و پیام الزامی است' 
+      });
+    }
+    
+    console.log(`📨 Sending to operator from ${sessionId.substring(0, 8)}...: "${message.substring(0, 50)}..."`);
+    
+    if (!telegramBot) {
+      return res.status(503).json({ 
+        success: false, 
+        error: 'سرویس اپراتور در دسترس نیست' 
+      });
+    }
+    
+    const result = await telegramBot.sendToOperator(sessionId, message);
+    
+    if (result.success) {
+      res.json(result);
+    } else {
+      res.status(500).json(result);
+    }
+  } catch (error) {
+    console.error('❌ Send to operator API error:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'خطا در ارسال پیام',
+      details: error.message 
+    });
+  }
+});
+
+// Test endpoint for Telegram
+app.get('/api/test-telegram', async (req, res) => {
+  try {
+    if (!telegramBot) {
+      return res.json({
+        success: false,
+        message: 'Telegram bot not initialized',
+        requiredConfig: {
+          hasToken: !!TELEGRAM_BOT_TOKEN,
+          hasAdminId: !!ADMIN_TELEGRAM_ID
+        }
+      });
+    }
+    
+    const testMessage = `🧪 تست سرویس تلگرام\n\n`
+      + `⏰ زمان: ${new Date().toLocaleString('fa-IR')}\n`
+      + `✅ سیستم در حال اجراست`;
+    
+    const sent = await telegramBot.sendToAdmin(testMessage);
+    
+    res.json({
+      success: sent,
+      message: sent ? 'پیام تست ارسال شد' : 'خطا در ارسال پیام',
+      config: {
+        tokenLength: TELEGRAM_BOT_TOKEN?.length || 0,
+        adminId: ADMIN_TELEGRAM_ID
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Start server
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`
+  ============================================
+  🚀 AI Chatbot Support System Started
+  ============================================
+  📍 Port: ${PORT}
+  🌐 URL: http://localhost:${PORT}
+  🤖 AI: ${GROQ_API_KEY ? '✅ Active' : '❌ Disabled'}
+  📱 Telegram: ${telegramBot ? '✅ Active' : '❌ Disabled'}
+  📊 Sessions: 0 (initial)
+  ============================================
+  `);
+  
+  // Test Telegram connection
+  if (telegramBot) {
+    setTimeout(async () => {
+      console.log('🔍 Testing Telegram connection...');
+      try {
+        const testMessage = `🚀 سرور راه‌اندازی شد\n\n`
+          + `⏰ ${new Date().toLocaleString('fa-IR')}\n`
+          + `🌐 ${process.env.RAILWAY_STATIC_URL || `http://localhost:${PORT}`}\n`
+          + `✅ آماده دریافت پیام‌ها`;
+        
+        await telegramBot.sendToAdmin(testMessage);
+        console.log('✅ Telegram connection test passed');
+      } catch (error) {
+        console.error('❌ Telegram connection test failed:', error.message);
+      }
+    }, 2000);
+  }
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+  console.error('🔥 Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('🔥 Unhandled Rejection at:', promise, 'reason:', reason);
+});
