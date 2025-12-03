@@ -75,7 +75,7 @@ class ChatWidget {
                 <div class="chat-header">
                     <div class="header-left">
                         <div class="chat-logo">
-                            <i class="fas fa-robot"></i>
+                <img src="https://shikpooshaan.ir/LOGO.jpeg" alt="Chat Logo">
                         </div>
                         <div class="chat-title">
                             <h3>پشتیبان هوشمند</h3>
