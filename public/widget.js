@@ -211,10 +211,19 @@ class ChatWidget {
                 reconnectionAttempts: 5
             });
             
-            this.state.socket.on('connect', () => {
-                console.log('WebSocket connected');
-                this.state.isConnected = true;
-                this.updateConnectionStatus(true);
+            // در تابع initWebSocket یا constructor:
+this.state.socket.on('operator-accepted', (data) => {
+  this.addMessage('system', data.message);
+  this.state.operatorConnected = true;
+  this.elements.operatorInfo.classList.add('active');
+});
+
+this.state.socket.on('operator-rejected', (data) => {
+  this.addMessage('system', data.message);
+  this.state.operatorConnected = false;
+  this.elements.operatorInfo.classList.remove('active');
+  this.resetHumanSupportButton();
+});
                 
                 // Join session
                 this.state.socket.emit('join', this.state.sessionId);
