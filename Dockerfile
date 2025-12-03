@@ -12,7 +12,7 @@ COPY telegram/package*.json ./telegram/
 # نصب وابستگی‌ها در ریشه
 RUN npm init -y && \
     cd backend && npm install && \
-    cd ../telegram && npm install
+    cd /telegram && npm install
 
 # کپی تمام فایل‌ها
 COPY . .
