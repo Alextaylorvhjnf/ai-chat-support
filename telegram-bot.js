@@ -3,35 +3,33 @@ const axios = require('axios');
 require('dotenv').config();
 
 console.log('='.repeat(60));
-console.log('🤖 TELEGRAM BOT - OPERATOR PANEL');
+console.log('🤖 TELEGRAM BOT - FIXED CALLBACK VERSION');
 console.log('='.repeat(60));
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8200429613:AAGTgP5hnOiRIxXc3YJmxvTqwEqhQ4crGkk';
-const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID || '6234289265';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
-const TELEGRAM_PORT = process.env.TELEGRAM_PORT || 3001;
 
 // Validate
-if (!TELEGRAM_BOT_TOKEN) {
-  console.error('❌ Missing Telegram Bot Token');
+if (!TELEGRAM_BOT_TOKEN || !ADMIN_TELEGRAM_ID) {
+  console.error('❌ Missing Telegram configuration');
   process.exit(1);
 }
 
 console.log('✅ Bot configured');
 console.log('✅ Admin:', ADMIN_TELEGRAM_ID);
 console.log('✅ Backend:', BACKEND_URL);
-console.log('✅ Port:', TELEGRAM_PORT);
 
 // Store sessions
-const sessions = new Map(); // sessionShortId -> {sessionId, userInfo, operatorChatId}
-const operatorSessions = new Map(); // operatorChatId -> sessionShortId
+const sessions = new Map(); // sessionShortId -> {sessionId, chatId, userInfo}
+const userSessions = new Map(); // chatId -> sessionShortId
 
 // Create bot
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
 // Helper: Generate short session ID
 function generateShortId(sessionId) {
-  return sessionId ? sessionId.substring(0, 12) : 'unknown';
+  return sessionId.substring(0, 12); // Use first 12 chars
 }
 
 // Helper: Store session
@@ -41,8 +39,7 @@ function storeSession(sessionId, userInfo) {
     fullId: sessionId,
     userInfo,
     status: 'pending',
-    createdAt: new Date(),
-    operatorChatId: null
+    createdAt: new Date()
   });
   return shortId;
 }
@@ -59,8 +56,8 @@ bot.start((ctx) => {
     + `سلام ${ctx.from.first_name || 'اپراتور'}! 👋\n\n`
     + `✅ سیستم آماده دریافت پیام‌هاست\n\n`
     + `📋 *دستورات:*\n`
-    + `/sessions - نمایش جلسات فعال\n`
-    + `/help - راهنمای استفاده`;
+    + `/sessions - جلسات فعال\n`
+    + `/help - راهنما`;
   
   ctx.reply(welcomeMessage, { 
     parse_mode: 'Markdown',
@@ -75,25 +72,23 @@ bot.command('sessions', async (ctx) => {
   try {
     const response = await axios.get(`${BACKEND_URL}/api/sessions`);
     const sessionsList = response.data.sessions || [];
-    const pendingSessions = sessionsList.filter(s => !s.connectedToHuman);
     
-    if (pendingSessions.length === 0) {
-      return ctx.reply('📭 *هیچ جلسه فعالی در انتظار نیست*\n\n'
-        + 'پیام‌های جدید به صورت خودکار برای شما ارسال می‌شوند.', {
-          parse_mode: 'Markdown'
-        });
+    if (sessionsList.length === 0) {
+      return ctx.reply('📭 *هیچ جلسه فعالی وجود ندارد*', {
+        parse_mode: 'Markdown'
+      });
     }
     
-    let message = `📊 *جلسات فعال در انتظار (${pendingSessions.length}):*\n\n`;
+    let message = `📊 *جلسات فعال (${sessionsList.length}):*\n\n`;
     
-    pendingSessions.forEach((session, index) => {
-      const shortId = session.shortId || generateShortId(session.id);
-      const duration = session.duration || Math.floor((new Date() - new Date(session.createdAt)) / (1000 * 60));
+    sessionsList.forEach((session, index) => {
+      const shortId = generateShortId(session.id);
+      const duration = Math.floor((new Date() - new Date(session.createdAt)) / (1000 * 60));
       
       message += `*${index + 1}. جلسه:* \`${shortId}\`\n`;
       message += `   👤 *کاربر:* ${session.userInfo?.name || 'ناشناس'}\n`;
       message += `   ⏱️ *مدت:* ${duration} دقیقه\n`;
-      message += `   📝 *پیام‌ها:* ${session.messageCount} عدد\n\n`;
+      message += `   🔗 *وضعیت:* ${session.connectedToHuman ? 'متصل ✅' : 'در انتظار'}\n\n`;
     });
     
     ctx.reply(message, { 
@@ -104,65 +99,50 @@ bot.command('sessions', async (ctx) => {
     });
     
   } catch (error) {
-    console.error('❌ Sessions error:', error.message);
-    ctx.reply('❌ خطا در دریافت جلسات از سرور');
+    console.error('Sessions error:', error.message);
+    ctx.reply('❌ خطا در دریافت جلسات');
   }
 });
 
-// Handle new session from user (called by backend webhook)
+// Handle new session from user
 async function handleNewUserSession(sessionId, userInfo, userMessage) {
   try {
     const shortId = storeSession(sessionId, userInfo);
     
     const operatorMessage = `🔔 *درخواست اتصال جدید*\n\n`
-      + `🎫 *کد جلسه:* \`${shortId}\`\n`
-      + `👤 *کاربر:* ${userInfo.name || 'کاربر سایت'}\n`;
-    
-    if (userInfo.email) {
-      operatorMessage += `📧 *ایمیل:* ${userInfo.email}\n`;
-    }
-    
-    operatorMessage += `\n📝 *پیام کاربر:*\n`
-      + `${userMessage.substring(0, 150)}${userMessage.length > 150 ? '...' : ''}\n\n`
+      + `🎫 *کد:* \`${shortId}\`\n`
+      + `👤 *کاربر:* ${userInfo.name || 'کاربر سایت'}\n`
+      + `📝 *پیام:* ${userMessage.substring(0, 100)}${userMessage.length > 100 ? '...' : ''}\n\n`
       + `💬 برای پذیرش گفتگو کلیک کنید:`;
     
-    // Send to admin with callback buttons
-    const message = await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, operatorMessage, {
+    // Send to admin with working callback buttons
+    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, operatorMessage, {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
         [
           Markup.button.callback('✅ بله، می‌پذیرم', `accept_${shortId}`),
           Markup.button.callback('❌ نه، رد کن', `reject_${shortId}`)
-        ],
-        [
-          Markup.button.callback('📋 مشاهده جزئیات', `details_${shortId}`)
         ]
       ])
     });
-    
-    // Store message ID
-    const session = sessions.get(shortId);
-    if (session) {
-      session.messageId = message.message_id;
-    }
     
     console.log(`✅ New session notification sent: ${shortId}`);
     return true;
     
   } catch (error) {
-    console.error('❌ Error sending notification:', error.message);
+    console.error('Error sending notification:', error.message);
     return false;
   }
 }
 
-// Handle accept callback
+// Handle accept callback - FIXED
 bot.action(/accept_(.+)/, async (ctx) => {
   try {
     const shortId = ctx.match[1];
     const fullSessionId = getFullSessionId(shortId);
     
     if (!fullSessionId) {
-      return ctx.answerCbQuery('❌ جلسه پیدا نشد', { show_alert: true });
+      return ctx.answerCbQuery('❌ جلسه پیدا نشد');
     }
     
     // Update session status
@@ -174,23 +154,22 @@ bot.action(/accept_(.+)/, async (ctx) => {
     }
     
     // Store operator chat ID
-    operatorSessions.set(ctx.chat.id, shortId);
+    userSessions.set(ctx.chat.id, shortId);
     
     // Acknowledge callback
     await ctx.answerCbQuery('✅ گفتگو قبول شد');
     
     // Edit message to show acceptance
-    const updatedText = ctx.callbackQuery.message.text + '\n\n'
-      + '✅ *شما این گفتگو را قبول کردید*\n\n'
-      + '💬 اکنون می‌توانید پیام بفرستید. هر پیامی که بنویسید به کاربر ارسال می‌شود.';
-    
-    await ctx.editMessageText(updatedText, { 
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([]) // Remove buttons
-    });
+    await ctx.editMessageText(
+      ctx.callbackQuery.message.text + '\n\n✅ *شما این گفتگو را قبول کردید*\n\n💬 اکنون می‌توانید پیام بفرستید.',
+      { 
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([]) // Remove buttons
+      }
+    );
     
     // Notify backend
-    await axios.post(`${BACKEND_URL}/webhook`, {
+    await axios.post(`${BACKEND_URL}/api/telegram-event`, {
       event: 'operator_accepted',
       data: { 
         sessionId: fullSessionId,
@@ -199,145 +178,50 @@ bot.action(/accept_(.+)/, async (ctx) => {
       }
     });
     
-    console.log(`✅ Session ${shortId} accepted by operator ${ctx.chat.id}`);
+    console.log(`✅ Session ${shortId} accepted by operator`);
     
   } catch (error) {
-    console.error('❌ Accept callback error:', error.message);
-    ctx.answerCbQuery('❌ خطا در پردازش', { show_alert: true });
+    console.error('Accept callback error:', error.message);
+    ctx.answerCbQuery('❌ خطا در پردازش');
   }
 });
 
-// Handle reject callback
+// Handle reject callback - FIXED
 bot.action(/reject_(.+)/, async (ctx) => {
   try {
     const shortId = ctx.match[1];
     const fullSessionId = getFullSessionId(shortId);
     
     if (!fullSessionId) {
-      return ctx.answerCbQuery('❌ جلسه پیدا نشد', { show_alert: true });
+      return ctx.answerCbQuery('❌ جلسه پیدا نشد');
     }
     
     // Remove session
     sessions.delete(shortId);
-    operatorSessions.delete(ctx.chat.id);
     
     // Acknowledge callback
     await ctx.answerCbQuery('❌ گفتگو رد شد');
     
     // Edit message
-    const updatedText = ctx.callbackQuery.message.text + '\n\n'
-      + '❌ *شما این گفتگو را رد کردید*';
-    
-    await ctx.editMessageText(updatedText, { 
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([])
-    });
+    await ctx.editMessageText(
+      ctx.callbackQuery.message.text + '\n\n❌ *شما این گفتگو را رد کردید*',
+      { 
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([])
+      }
+    );
     
     // Notify backend
-    await axios.post(`${BACKEND_URL}/webhook`, {
+    await axios.post(`${BACKEND_URL}/api/telegram-event`, {
       event: 'operator_rejected',
       data: { sessionId: fullSessionId }
     });
     
-    console.log(`❌ Session ${shortId} rejected by operator ${ctx.chat.id}`);
+    console.log(`❌ Session ${shortId} rejected by operator`);
     
   } catch (error) {
-    console.error('❌ Reject callback error:', error.message);
-    ctx.answerCbQuery('❌ خطا در پردازش', { show_alert: true });
-  }
-});
-
-// Handle details callback
-bot.action(/details_(.+)/, async (ctx) => {
-  try {
-    const shortId = ctx.match[1];
-    const fullSessionId = getFullSessionId(shortId);
-    
-    if (!fullSessionId) {
-      return ctx.answerCbQuery('❌ جلسه پیدا نشد', { show_alert: true });
-    }
-    
-    // Get session details from backend
-    const response = await axios.get(`${BACKEND_URL}/api/sessions`);
-    const session = response.data.sessions?.find(s => s.id === fullSessionId);
-    
-    if (session) {
-      let details = `📋 *جزئیات جلسه*\n\n`
-        + `🎫 *کد:* \`${shortId}\`\n`
-        + `👤 *کاربر:* ${session.userInfo?.name || 'ناشناس'}\n`
-        + `📧 *ایمیل:* ${session.userInfo?.email || 'ندارد'}\n`
-        + `📞 *تلفن:* ${session.userInfo?.phone || 'ندارد'}\n`
-        + `⏱️ *مدت:* ${session.duration || 0} دقیقه\n`
-        + `💬 *تعداد پیام‌ها:* ${session.messageCount || 0}\n`
-        + `🔗 *وضعیت:* ${session.connectedToHuman ? 'متصل' : 'در انتظار'}\n\n`;
-      
-      // Show last 3 messages
-      if (session.messages && session.messages.length > 0) {
-        details += '*آخرین پیام‌ها:*\n';
-        const lastMessages = session.messages.slice(-3);
-        lastMessages.forEach((msg, idx) => {
-          const role = msg.role === 'user' ? '👤 کاربر' : 
-                      msg.role === 'assistant' ? '🤖 هوش مصنوعی' : '👨‍💼 اپراتور';
-          details += `${idx + 1}. ${role}: ${msg.content.substring(0, 50)}${msg.content.length > 50 ? '...' : ''}\n`;
-        });
-      }
-      
-      await ctx.answerCbQuery('📋 جزئیات نمایش داده شد', { show_alert: true });
-      
-      // Send as a separate message
-      await ctx.reply(details, { 
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback('✅ پذیرش این جلسه', `accept_${shortId}`)]
-        ])
-      });
-    }
-    
-  } catch (error) {
-    console.error('❌ Details callback error:', error.message);
-    ctx.answerCbQuery('❌ خطا در دریافت جزئیات', { show_alert: true });
-  }
-});
-
-// Handle refresh sessions
-bot.action('refresh_sessions', async (ctx) => {
-  try {
-    const response = await axios.get(`${BACKEND_URL}/api/sessions`);
-    const sessionsList = response.data.sessions || [];
-    const pendingSessions = sessionsList.filter(s => !s.connectedToHuman);
-    
-    if (pendingSessions.length === 0) {
-      await ctx.editMessageText('📭 *هیچ جلسه فعالی در انتظار نیست*\n\n'
-        + 'پیام‌های جدید به صورت خودکار برای شما ارسال می‌شوند.', {
-          parse_mode: 'Markdown'
-        });
-      return ctx.answerCbQuery('✅ بروزرسانی شد');
-    }
-    
-    let message = `📊 *جلسات فعال در انتظار (${pendingSessions.length}):*\n\n`;
-    
-    pendingSessions.forEach((session, index) => {
-      const shortId = session.shortId || generateShortId(session.id);
-      const duration = session.duration || Math.floor((new Date() - new Date(session.createdAt)) / (1000 * 60));
-      
-      message += `*${index + 1}. جلسه:* \`${shortId}\`\n`;
-      message += `   👤 *کاربر:* ${session.userInfo?.name || 'ناشناس'}\n`;
-      message += `   ⏱️ *مدت:* ${duration} دقیقه\n`;
-      message += `   📝 *پیام‌ها:* ${session.messageCount} عدد\n\n`;
-    });
-    
-    await ctx.editMessageText(message, { 
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔄 بروزرسانی', 'refresh_sessions')]
-      ])
-    });
-    
-    await ctx.answerCbQuery('✅ بروزرسانی شد');
-    
-  } catch (error) {
-    console.error('❌ Refresh error:', error.message);
-    ctx.answerCbQuery('❌ خطا در بروزرسانی', { show_alert: true });
+    console.error('Reject callback error:', error.message);
+    ctx.answerCbQuery('❌ خطا در پردازش');
   }
 });
 
@@ -350,7 +234,7 @@ bot.on('text', async (ctx) => {
   const messageText = ctx.message.text;
   
   // Check if operator has an active session
-  const shortId = operatorSessions.get(chatId);
+  const shortId = userSessions.get(chatId);
   if (!shortId) {
     return ctx.reply('📭 *شما جلسه فعالی ندارید*\n\n'
       + 'منتظر درخواست کاربران باشید یا از /sessions استفاده کنید.', {
@@ -379,27 +263,19 @@ bot.on('text', async (ctx) => {
       // Confirm to operator
       ctx.reply(`✅ *پیام ارسال شد*\n\n`
         + `👤 به: ${response.data.userName || 'کاربر'}\n`
-        + `📝 پیام شما: ${messageText.substring(0, 100)}${messageText.length > 100 ? '...' : ''}`, {
+        + `📝 پیام شما: ${messageText.substring(0, 50)}${messageText.length > 50 ? '...' : ''}`, {
           parse_mode: 'Markdown'
         });
       
-      // Notify backend
-      await axios.post(`${BACKEND_URL}/webhook`, {
-        event: 'operator_message_sent',
-        data: {
-          sessionId: session.fullId,
-          operatorId: chatId
-        }
-      });
-      
+      // Log message
       console.log(`📨 Operator ${chatId} sent message for session ${shortId}`);
     } else {
-      ctx.reply('❌ خطا در ارسال پیام: ' + (response.data.error || 'خطای ناشناخته'));
+      ctx.reply('❌ خطا در ارسال پیام');
     }
     
   } catch (error) {
-    console.error('❌ Send message error:', error.message);
-    ctx.reply('❌ خطا در ارتباط با سرور اصلی');
+    console.error('Send message error:', error.message);
+    ctx.reply('❌ خطا در ارتباط با سرور');
   }
 });
 
@@ -414,24 +290,32 @@ bot.command('help', (ctx) => {
     + `/start - شروع\n`
     + `/sessions - جلسات فعال\n`
     + `/help - این راهنما\n\n`
-    + `🔔 *توجه:* هر پیامی که می‌نویسید به کاربر ارسال می‌شود.`;
+    + `🔔 هر پیامی که می‌نویسید به کاربر ارسال می‌شود.`;
   
   ctx.reply(helpMessage, { parse_mode: 'Markdown' });
+});
+
+// Handle callback query errors
+bot.on('callback_query', async (ctx) => {
+  // If no action matched, answer anyway
+  await ctx.answerCbQuery();
 });
 
 // Webhook endpoint for backend
 const express = require('express');
 const app = express();
+const webhookPort = process.env.TELEGRAM_PORT || 3001;
 
 app.use(express.json());
 
-// Webhook from backend (برای دریافت درخواست‌های جدید از کاربران)
+// Webhook from backend
 app.post('/webhook', async (req, res) => {
   try {
     const { event, data } = req.body;
     
-    console.log(`📨 Received webhook: ${event}`, { 
-      sessionId: data.sessionId ? generateShortId(data.sessionId) : 'N/A' 
+    console.log(`📨 Webhook: ${event}`, { 
+      sessionId: data.sessionId ? generateShortId(data.sessionId) : 'N/A',
+      event 
     });
     
     switch (event) {
@@ -450,8 +334,8 @@ app.post('/webhook', async (req, res) => {
         const session = sessions.get(shortId);
         
         if (session && session.operatorChatId) {
-          const message = `📩 *پیام جدید از کاربر*\n\n`
-            + `🎫 *کد جلسه:* \`${shortId}\`\n`
+          const message = `📩 *پیام از کاربر*\n\n`
+            + `🎫 *کد:* \`${shortId}\`\n`
             + `👤 *کاربر:* ${data.userName || 'کاربر سایت'}\n`
             + `💬 *پیام:*\n${data.message}\n\n`
             + `✏️ برای پاسخ، پیام خود را بنویسید...`;
@@ -462,68 +346,86 @@ app.post('/webhook', async (req, res) => {
           
           res.json({ success: true });
         } else {
-          res.json({ 
-            success: false, 
-            error: 'No operator assigned to this session' 
-          });
+          res.json({ success: false, error: 'No operator assigned' });
         }
         break;
         
+      case 'session_ended':
+        const shortIdEnded = generateShortId(data.sessionId);
+        const endedSession = sessions.get(shortIdEnded);
+        
+        if (endedSession && endedSession.operatorChatId) {
+          await bot.telegram.sendMessage(endedSession.operatorChatId,
+            `📭 *جلسه به پایان رسید*\n\n`
+            + `🎫 کد: \`${shortIdEnded}\`\n`
+            + `✅ گفتگو با موفقیت پایان یافت.`, {
+              parse_mode: 'Markdown'
+            });
+          
+          // Cleanup
+          sessions.delete(shortIdEnded);
+          userSessions.delete(endedSession.operatorChatId);
+        }
+        res.json({ success: true });
+        break;
+        
       default:
-        res.json({ 
-          success: false, 
-          error: 'Unknown event type' 
-        });
+        res.json({ success: false, error: 'Unknown event' });
     }
     
   } catch (error) {
-    console.error('❌ Webhook error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
+    console.error('Webhook error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Health check endpoint
+// Health check
 app.get('/health', (req, res) => {
-  const activeSessions = Array.from(sessions.values()).filter(s => s.status === 'accepted').length;
-  const pendingSessions = Array.from(sessions.values()).filter(s => s.status === 'pending').length;
-  
   res.json({
     status: 'OK',
     bot: 'running',
-    activeSessions: activeSessions,
-    pendingSessions: pendingSessions,
-    timestamp: new Date().toISOString(),
-    adminId: ADMIN_TELEGRAM_ID
+    activeSessions: Array.from(sessions.values()).filter(s => s.status === 'accepted').length,
+    pendingSessions: Array.from(sessions.values()).filter(s => s.status === 'pending').length,
+    timestamp: new Date().toISOString()
   });
 });
 
-// Start bot and web server
+// Start bot
 async function startBot() {
   try {
     console.log('🚀 Starting Telegram bot...');
     
-    // Launch bot with polling
-    await bot.launch();
-    console.log('✅ Bot started with polling');
-    
-    // Start web server for webhooks
-    app.listen(TELEGRAM_PORT, () => {
-      console.log(`🌐 Telegram bot web server on port ${TELEGRAM_PORT}`);
-      console.log('✅ Bot is ready and waiting for connections!');
+    // Use webhook for Railway
+    const domain = process.env.RAILWAY_STATIC_URL;
+    if (domain) {
+      const webhookUrl = `${domain}/telegram-webhook`;
+      console.log(`🌐 Setting webhook to: ${webhookUrl}`);
       
-      // Send startup message to admin
-      setTimeout(() => {
-        bot.telegram.sendMessage(ADMIN_TELEGRAM_ID,
-          `🤖 *ربات فعال شد*\n\n`
-          + `⏰ ${new Date().toLocaleString('fa-IR')}\n`
-          + `✅ سیستم پشتیبانی آماده دریافت درخواست‌هاست\n\n`
-          + `برای آزمایش، روی یک جلسه در ویجت سایت کلیک کنید.`, {
-            parse_mode: 'Markdown'
-          }).catch(console.error);
-      }, 2000);
+      await bot.telegram.setWebhook(webhookUrl);
+      
+      // Setup webhook endpoint
+      app.post('/telegram-webhook', (req, res) => {
+        bot.handleUpdate(req.body, res);
+      });
+    } else {
+      // Use polling locally
+      await bot.launch();
+      console.log('✅ Bot started with polling');
+    }
+    
+    // Start web server
+    app.listen(webhookPort, () => {
+      console.log(`🤖 Telegram bot server on port ${webhookPort}`);
+      console.log('✅ Bot is ready!');
+      
+      // Send startup message
+      bot.telegram.sendMessage(ADMIN_TELEGRAM_ID,
+        `🤖 *ربات فعال شد*\n\n`
+        + `⏰ ${new Date().toLocaleString('fa-IR')}\n`
+        + `✅ آماده دریافت درخواست‌ها\n\n`
+        + `برای آزمایش، روی یک جلسه در ویجت کلیک کنید.`, {
+          parse_mode: 'Markdown'
+        }).catch(console.error);
     });
     
   } catch (error) {
