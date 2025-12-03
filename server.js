@@ -20,46 +20,85 @@ const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID;
 const app = express();
 const server = http.createServer(app);
 
-// CORS Configuration
+// ==================== CORS Configuration ====================
+// برای WebSocket
 const io = socketIo(server, {
   cors: {
     origin: "*",
-    methods: ["GET", "POST", "OPTIONS"],
-    credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"]
+    methods: ["GET", "POST"],
+    credentials: true
   },
   transports: ['websocket', 'polling']
 });
 
-// ==================== Enhanced CORS Middleware ====================
+// برای REST API
 app.use(cors({
   origin: "*",
-  methods: ["GET", "POST", "OPTIONS", "PUT", "DELETE"],
-  allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
-  credentials: true,
-  preflightContinue: false,
-  optionsSuccessStatus: 204
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: true
 }));
 
 // Handle preflight requests
-app.options('*', cors());
+app.options('*', (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.sendStatus(204);
+});
+
+// ==================== Security Headers ====================
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.socket.io", "https://cdnjs.cloudflare.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://cdnjs.cloudflare.com"],
+      fontSrc: ["'self'", "https://cdnjs.cloudflare.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://api.groq.com", "wss:", "ws:"]
+    }
+  },
+  crossOriginEmbedderPolicy: false,
+  crossOriginOpenerPolicy: false,
+  crossOriginResourcePolicy: false // این مهم است!
+}));
 
 // ==================== Other Middleware ====================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false
-}));
+
+// ==================== Custom Headers Middleware ====================
+app.use((req, res, next) => {
+  // حذف هدرهای مسدودکننده
+  res.removeHeader('Cross-Origin-Resource-Policy');
+  res.removeHeader('Cross-Origin-Opener-Policy');
+  
+  // اضافه کردن هدرهای لازم
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Expose-Headers', '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  next();
+});
 
 // ==================== Serve Static Files ====================
-app.use(express.static(path.join(__dirname, 'public'), {
+app.use('/public', express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
+    // حذف هدرهای مسدودکننده برای فایل‌های استاتیک
+    res.removeHeader('Cross-Origin-Resource-Policy');
+    res.removeHeader('Cross-Origin-Opener-Policy');
+    
     if (filePath.endsWith('.js')) {
-      res.setHeader('Content-Type', 'application/javascript');
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     } else if (filePath.endsWith('.css')) {
-      res.setHeader('Content-Type', 'text/css');
+      res.setHeader('Content-Type', 'text/css; charset=utf-8');
+    } else if (filePath.endsWith('.html')) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
     }
+    
     res.setHeader('Cache-Control', 'public, max-age=86400');
     res.setHeader('Access-Control-Allow-Origin', '*');
   }
@@ -111,7 +150,7 @@ class AIService {
         { role: 'user', content: userMessage }
       ];
 
-      console.log('Sending to AI:', { message: userMessage.substring(0, 100) });
+      console.log('🤖 Sending to AI:', { message: userMessage.substring(0, 100) });
 
       const response = await this.axiosInstance.post('/chat/completions', {
         model: this.model,
@@ -123,7 +162,7 @@ class AIService {
 
       if (response.data?.choices?.[0]?.message?.content) {
         const aiMessage = response.data.choices[0].message.content;
-        console.log('AI Response received');
+        console.log('✅ AI Response received');
         
         if (this.shouldConnectToHuman(aiMessage)) {
           return {
@@ -143,7 +182,7 @@ class AIService {
       throw new Error('Invalid response from AI API');
 
     } catch (error) {
-      console.error('AI Service Error:', error.message);
+      console.error('❌ AI Service Error:', error.message);
       
       return {
         success: false,
@@ -588,27 +627,81 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     telegram: telegramBot ? 'active' : 'inactive',
     sessions: sessionManager.sessions.size,
-    url: process.env.RAILWAY_STATIC_URL || `http://localhost:${PORT}`
+    cors: 'enabled',
+    headers: req.headers
   });
 });
 
-// Route for widget files
+// Route for widget files - با هدرهای اصلاح شده
 app.get('/widget.js', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public/widget.js'), {
+  const filePath = path.join(__dirname, 'public/widget.js');
+  res.sendFile(filePath, {
     headers: {
-      'Content-Type': 'application/javascript',
-      'Access-Control-Allow-Origin': '*'
+      'Content-Type': 'application/javascript; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=86400'
     }
   });
 });
 
 app.get('/widget.css', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public/widget.css'), {
+  const filePath = path.join(__dirname, 'public/widget.css');
+  res.sendFile(filePath, {
     headers: {
-      'Content-Type': 'text/css',
-      'Access-Control-Allow-Origin': '*'
+      'Content-Type': 'text/css; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=86400'
     }
   });
+});
+
+app.get('/embed.js', (req, res) => {
+  const embedCode = `
+// Embed Script for Chat Widget
+(function() {
+    var backendUrl = "https://ai-chat-support-production.up.railway.app";
+    
+    console.log('🚀 Loading Chat Widget from:', backendUrl);
+    
+    // Load CSS
+    var link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = backendUrl + '/widget.css';
+    link.type = 'text/css';
+    link.crossOrigin = 'anonymous';
+    document.head.appendChild(link);
+    
+    // Load Widget Script
+    var script = document.createElement('script');
+    script.src = backendUrl + '/widget.js';
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    script.onload = function() {
+        console.log('✅ Chat Widget loaded successfully');
+        if (typeof window.initChatWidget === 'function') {
+            window.initChatWidget();
+        }
+    };
+    script.onerror = function() {
+        console.error('❌ Failed to load Chat Widget');
+    };
+    document.head.appendChild(script);
+    
+    // Load Socket.io if not already loaded
+    if (!window.io) {
+        var socketScript = document.createElement('script');
+        socketScript.src = 'https://cdn.socket.io/4.7.2/socket.io.min.js';
+        socketScript.async = true;
+        socketScript.crossOrigin = 'anonymous';
+        document.head.appendChild(socketScript);
+    }
+})();
+  `;
+  
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(embedCode);
 });
 
 // API endpoint for chat
@@ -734,7 +827,8 @@ app.get('/api/test', (req, res) => {
     message: 'API is working!',
     serverTime: new Date().toISOString(),
     environment: process.env.NODE_ENV,
-    publicPath: path.join(__dirname, 'public')
+    cors: 'enabled',
+    headers: req.headers
   });
 });
 
@@ -742,25 +836,9 @@ app.get('/api/test', (req, res) => {
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public/widget.html'), {
     headers: {
-      'Content-Type': 'text/html; charset=utf-8'
+      'Content-Type': 'text/html; charset=utf-8',
+      'Access-Control-Allow-Origin': '*'
     }
-  });
-});
-
-// Catch-all route for frontend
-app.get('*', (req, res) => {
-  if (req.url.startsWith('/api/')) {
-    return res.status(404).json({ error: 'API endpoint not found' });
-  }
-  res.sendFile(path.join(__dirname, 'public/widget.html'));
-});
-
-// ==================== Error Handling ====================
-app.use((err, req, res, next) => {
-  console.error('🔥 Server error:', err);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
   });
 });
 
@@ -773,17 +851,11 @@ server.listen(PORT, '0.0.0.0', () => {
   📡 Port: ${PORT}
   🌐 WebSocket: Ready
   🤖 Telegram Bot: ${telegramBot ? '✅ Active' : '⚠️ Disabled'}
+  🔒 CORS: Enabled for all origins
   📁 Public Directory: ${path.join(__dirname, 'public')}
   🔗 Health Check: http://localhost:${PORT}/api/health
-  🎯 Widget URL: http://localhost:${PORT}/widget.js
+  🎯 Widget JS: http://localhost:${PORT}/widget.js
+  🎯 Embed Script: http://localhost:${PORT}/embed.js
   ============================================
   `);
-  
-  // Log environment info
-  console.log('Environment:', {
-    NODE_ENV: process.env.NODE_ENV,
-    HAS_GROQ_KEY: !!GROQ_API_KEY,
-    HAS_TELEGRAM_TOKEN: !!TELEGRAM_BOT_TOKEN,
-    HAS_ADMIN_ID: !!ADMIN_TELEGRAM_ID
-  });
 });
