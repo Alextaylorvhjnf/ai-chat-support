@@ -398,56 +398,45 @@ io.on('connection', (socket) => {
 });
 
 // API Endpoints
-app.post('/api/chat', async (req, res) => {
+// در server.js، این endpoint را اضافه/به‌روز کنید:
+
+app.post('/api/telegram-event', async (req, res) => {
   try {
-    const { message, sessionId } = req.body;
+    const { event, data } = req.body;
+    console.log(`📨 Telegram event: ${event}`, data);
     
-    if (!message || !sessionId) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'پیام و شناسه جلسه الزامی است' 
-      });
+    switch (event) {
+      case 'operator_accepted':
+        // Connect session to operator
+        sessionManager.connectToHuman(data.sessionId, data.operatorId);
+        
+        // Notify user via WebSocket
+        io.to(data.sessionId).emit('operator-accepted', {
+          message: `✅ اپراتور "${data.operatorName || 'پشتیبان'}" درخواست شما را پذیرفت. می‌توانید گفتگو کنید.`,
+          operatorName: data.operatorName,
+          timestamp: new Date().toISOString()
+        });
+        
+        break;
+        
+      case 'operator_rejected':
+        // Disconnect session
+        sessionManager.disconnectFromHuman(data.sessionId);
+        
+        // Notify user
+        io.to(data.sessionId).emit('operator-rejected', {
+          message: '❌ اپراتور در حال حاضر مشغول است. لطفاً بعداً تلاش کنید.',
+          timestamp: new Date().toISOString()
+        });
+        
+        break;
     }
     
-    console.log(`💬 Chat: ${sessionId.substring(0, 8)}...`);
+    res.json({ success: true });
     
-    // Get or create session
-    let session = sessionManager.getSession(sessionId);
-    if (!session) {
-      session = sessionManager.createSession(sessionId);
-    }
-    
-    // Add user message
-    sessionManager.addMessage(sessionId, 'user', message);
-    
-    // Get AI response
-    const aiResponse = await aiService.getAIResponse(message);
-    
-    if (aiResponse.success) {
-      sessionManager.addMessage(sessionId, 'assistant', aiResponse.message);
-      
-      res.json({
-        success: true,
-        message: aiResponse.message,
-        requiresHuman: false,
-        sessionId: sessionId
-      });
-    } else {
-      sessionManager.addMessage(sessionId, 'system', 'AI پیشنهاد اتصال به اپراتور');
-      
-      res.json({
-        success: false,
-        message: aiResponse.message,
-        requiresHuman: true,
-        sessionId: sessionId
-      });
-    }
   } catch (error) {
-    console.error('❌ Chat error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'خطا در پردازش درخواست'
-    });
+    console.error('Telegram event error:', error);
+    res.json({ success: false, error: error.message });
   }
 });
 
