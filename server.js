@@ -154,6 +154,19 @@ class SessionManager {
     }
     return session;
   }
+
+  addMessage(sessionId, message, role = 'user') {
+    const session = this.getSession(sessionId);
+    if (session) {
+      session.messages.push({
+        role,
+        content: message,
+        timestamp: new Date()
+      });
+      session.lastActivity = new Date();
+      sessionCache.set(sessionId, session);
+    }
+  }
 }
 
 // Telegram Service
@@ -170,7 +183,7 @@ class TelegramService {
     try {
       console.log(`📨 Notifying Telegram about session: ${sessionId.substring(0, 8)}`);
       
-      const response = await this.axios.post('/webhook', {
+      const response = await this.axios.post('/telegram-webhook', {
         event: 'new_session',
         data: {
           sessionId,
@@ -182,6 +195,22 @@ class TelegramService {
       return response.data.success === true;
     } catch (error) {
       console.error('Telegram notification error:', error.message);
+      return false;
+    }
+  }
+
+  async sendMessageToTelegram(chatId, message) {
+    try {
+      const response = await this.axios.post('/telegram-webhook', {
+        event: 'send_message',
+        data: {
+          chatId,
+          message
+        }
+      });
+      return response.data.success === true;
+    } catch (error) {
+      console.error('Telegram send message error:', error.message);
       return false;
     }
   }
@@ -221,7 +250,18 @@ app.post('/api/chat', async (req, res) => {
       session = sessionManager.createSession(sessionId);
     }
 
+    // ذخیره پیام کاربر
+    sessionManager.addMessage(sessionId, message, 'user');
+
     if (session.connectedToHuman) {
+      // اگر به اپراتور متصل است، پیام را به تلگرام ارسال کن
+      if (session.operatorId) {
+        await telegramService.sendMessageToTelegram(
+          session.operatorId,
+          `👤 کاربر: ${message}`
+        );
+      }
+      
       return res.json({
         success: true,
         message: 'پیام شما برای اپراتور ارسال شد.',
@@ -232,6 +272,12 @@ app.post('/api/chat', async (req, res) => {
 
     if (aiService) {
       const aiResponse = await aiService.getAIResponse(message);
+      
+      // ذخیره پاسخ AI
+      if (aiResponse.success) {
+        sessionManager.addMessage(sessionId, aiResponse.message, 'assistant');
+      }
+      
       return res.json({
         success: aiResponse.success,
         message: aiResponse.message,
@@ -296,10 +342,11 @@ app.post('/api/connect-human', async (req, res) => {
   }
 });
 
-app.post('/webhook', async (req, res) => {
+// ENDPOINT اصلاح شده: از /webhook به /telegram-webhook
+app.post('/telegram-webhook', async (req, res) => {
   try {
     const { event, data } = req.body;
-    console.log(`📨 Webhook: ${event}`, data);
+    console.log(`📨 Telegram Webhook: ${event}`, data);
 
     switch (event) {
       case 'operator_accepted':
@@ -327,6 +374,18 @@ app.post('/webhook', async (req, res) => {
             operatorName: data.operatorName || 'اپراتور',
             timestamp: new Date().toISOString()
           });
+          
+          // ذخیره پیام اپراتور
+          sessionManager.addMessage(data.sessionId, data.message, 'assistant');
+        }
+        break;
+        
+      case 'operator_typing':
+        if (data.sessionId) {
+          io.to(data.sessionId).emit('operator-typing', {
+            typing: data.typing || true,
+            operatorName: data.operatorName
+          });
         }
         break;
     }
@@ -339,16 +398,186 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
+// ENDPOINT جدید: ارسال پیام از اپراتور به کاربر
+app.post('/api/send-to-operator', async (req, res) => {
+  try {
+    const { sessionId, message, operatorId, operatorName } = req.body;
+    
+    if (!sessionId || !message) {
+      return res.status(400).json({ success: false, error: 'Missing data' });
+    }
+
+    console.log(`📤 Send to operator: ${sessionId.substring(0, 8)}`);
+
+    const session = sessionManager.getSession(sessionId);
+    if (!session) {
+      return res.json({ success: false, error: 'Session not found' });
+    }
+
+    // ارسال پیام به کاربر از طریق WebSocket
+    io.to(sessionId).emit('operator-message', {
+      from: 'operator',
+      message: message,
+      operatorId: operatorId,
+      operatorName: operatorName || 'اپراتور',
+      timestamp: new Date().toISOString()
+    });
+
+    // ذخیره پیام اپراتور
+    sessionManager.addMessage(sessionId, message, 'assistant');
+
+    res.json({
+      success: true,
+      message: 'پیام با موفقیت ارسال شد'
+    });
+
+  } catch (error) {
+    console.error('Send to operator error:', error);
+    res.json({ success: false, error: 'Server error' });
+  }
+});
+
+// ENDPOINT جدید: دریافت اطلاعات سشن
+app.get('/api/session/:sessionId', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = sessionManager.getSession(sessionId);
+    
+    if (!session) {
+      return res.status(404).json({ success: false, error: 'Session not found' });
+    }
+
+    res.json({
+      success: true,
+      session: {
+        id: session.id,
+        status: session.status,
+        connectedToHuman: session.connectedToHuman,
+        operatorName: session.operatorName,
+        createdAt: session.createdAt,
+        lastActivity: session.lastActivity,
+        messageCount: session.messages.length
+      }
+    });
+  } catch (error) {
+    console.error('Get session error:', error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+});
+
+// ENDPOINT جدید: لیست سشن‌های فعال
+app.get('/api/sessions', (req, res) => {
+  try {
+    const sessions = Array.from(sessionManager.sessions.values())
+      .filter(session => session.status === 'active')
+      .map(session => ({
+        id: session.id,
+        userInfo: session.userInfo,
+        status: session.status,
+        connectedToHuman: session.connectedToHuman,
+        operatorName: session.operatorName,
+        createdAt: session.createdAt,
+        lastActivity: session.lastActivity,
+        messageCount: session.messages.length
+      }));
+
+    res.json({
+      success: true,
+      count: sessions.length,
+      sessions
+    });
+  } catch (error) {
+    console.error('Get sessions error:', error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+});
+
+// ENDPOINT جدید: تست WebSocket
+app.get('/api/test-ws/:sessionId', (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    
+    io.to(sessionId).emit('test', {
+      message: 'WebSocket connection is working!',
+      timestamp: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      message: 'Test message sent via WebSocket'
+    });
+  } catch (error) {
+    console.error('Test WS error:', error);
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// ENDPOINT جدید: Cleanup old sessions
+app.post('/api/cleanup', (req, res) => {
+  try {
+    const now = new Date();
+    let cleaned = 0;
+    
+    for (const [sessionId, session] of sessionManager.sessions.entries()) {
+      const hoursSinceLastActivity = (now - session.lastActivity) / (1000 * 60 * 60);
+      
+      if (hoursSinceLastActivity > 24) { // سشن‌های قدیمی‌تر از 24 ساعت
+        sessionManager.sessions.delete(sessionId);
+        sessionCache.del(sessionId);
+        cleaned++;
+      }
+    }
+    
+    res.json({
+      success: true,
+      message: `Cleaned ${cleaned} old sessions`
+    });
+  } catch (error) {
+    console.error('Cleanup error:', error);
+    res.json({ success: false, error: error.message });
+  }
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'Endpoint not found',
+    path: req.path,
+    method: req.method
+  });
+});
+
+// Error handler
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({
+    success: false,
+    error: 'Internal server error',
+    message: err.message
+  });
+});
+
 // Start server
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`
   ============================================
-  🚀 Chat Server Started
+  🚀 Chat Server Started (Fixed Endpoints)
   ============================================
   📍 Port: ${PORT}
   🌐 URL: http://localhost:${PORT}
   🤖 AI: ${GROQ_API_KEY ? '✅ Active' : '❌ Disabled'}
   📱 Telegram: ${TELEGRAM_BOT_URL}
+  
+  ✅ Available Endpoints:
+  - POST /api/chat
+  - POST /api/connect-human
+  - POST /telegram-webhook
+  - POST /api/send-to-operator
+  - GET  /api/session/:id
+  - GET  /api/sessions
+  - GET  /api/health
+  
   ============================================
   `);
 });
