@@ -1,240 +1,106 @@
-// telegram/bot.js
 const { Telegraf } = require('telegraf');
-const fetch = require('node-fetch');
+const axios = require('axios');
 require('dotenv').config();
 
-// Load environment variables
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8200429613:AAGTgP5hnOiRIxXc3YJmxvTqwEqhQ4crGkk';
-const ADMIN_TELEGRAM_ID = process.env.ADMIN_TELEGRAM_ID || '7321524568';
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3000';
-
-// Initialize bot
-const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
-
-// Store active sessions
-const activeSessions = new Map(); // Map<adminChatId, sessionId>
-
-console.log('Telegram Bot Starting...');
-console.log('Bot Token:', TELEGRAM_BOT_TOKEN ? 'Set' : 'Not Set');
-console.log('Admin ID:', ADMIN_TELEGRAM_ID);
-console.log('Backend URL:', BACKEND_URL);
-
-/**
- * Send message to backend WebSocket
- */
-async function sendToBackend(sessionId, message) {
-  try {
-    const response = await fetch(`${BACKEND_URL}/api/telegram-message`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        sessionId: sessionId,
-        message: message,
-        source: 'telegram'
-      })
-    });
+class TelegramBot {
+    constructor() {
+        this.token = process.env.TELEGRAM_BOT_TOKEN;
+        this.adminId = process.env.ADMIN_TELEGRAM_ID;
+        this.backendUrl = process.env.BACKEND_URL || 'http://localhost:3000';
+        
+        if (!this.token) {
+            throw new Error('TELEGRAM_BOT_TOKEN is required');
+        }
+        
+        this.bot = new Telegraf(this.token);
+        this.setupBot();
+    }
     
-    return response.ok;
-  } catch (error) {
-    console.error('Error sending to backend:', error);
-    return false;
-  }
+    setupBot() {
+        // Start command
+        this.bot.start((ctx) => {
+            ctx.reply(`🤖 ربات پشتیبانی آنلاین\n\n`
+                + `این ربات برای ارتباط با اپراتورهای انسانی استفاده می‌شود.\n`
+                + `پیام‌های کاربران به صورت خودکار ارسال می‌شوند.\n\n`
+                + `برای مشاهده دستورات از /help استفاده کنید.`);
+        });
+        
+        // Help command
+        this.bot.help((ctx) => {
+            ctx.reply(`📖 راهنمای ربات:\n\n`
+                + `/start - شروع کار\n`
+                + `/status - وضعیت سیستم\n`
+                + `/sessions - جلسات فعال\n`
+                + `/broadcast [پیام] - ارسال پیام به همه\n`
+                + `/help - این راهنما`);
+        });
+        
+        // Status command
+        this.bot.command('status', async (ctx) => {
+            try {
+                const response = await axios.get(`${this.backendUrl}/api/health`);
+                ctx.reply(`✅ سیستم فعال\n`
+                    + `🕒 زمان: ${new Date().toLocaleString('fa-IR')}\n`
+                    + `🌐 وضعیت: ${response.data.status}`);
+            } catch (error) {
+                ctx.reply('❌ خطا در ارتباط با سرور');
+            }
+        });
+        
+        // Handle all messages
+        this.bot.on('text', async (ctx) => {
+            // Skip commands
+            if (ctx.message.text.startsWith('/')) return;
+            
+            // Check if message is from admin
+            if (ctx.from.id.toString() === this.adminId.toString()) {
+                // This is handled by the main backend
+                // Messages are processed through WebSocket
+                ctx.reply('👨‍💼 شما به عنوان اپراتور وارد شدید.\n\n'
+                    + 'پیام‌های کاربران از طریق پنل اصلی ارسال می‌شوند.');
+            } else {
+                ctx.reply('⚠️ این ربات فقط برای اپراتورها است.\n\n'
+                    + 'برای ارتباط با پشتیبانی از وبسایت استفاده کنید.');
+            }
+        });
+        
+        // Error handling
+        this.bot.catch((err, ctx) => {
+            console.error(`Error for ${ctx.updateType}:`, err);
+            ctx.reply('❌ خطایی رخ داد. لطفاً مجدداً تلاش کنید.');
+        });
+        
+        // Start bot
+        this.bot.launch()
+            .then(() => {
+                console.log('🤖 Telegram bot is running...');
+                
+                // Send startup message to admin
+                this.bot.telegram.sendMessage(
+                    this.adminId,
+                    `🚀 ربات تلگرام راه‌اندازی شد\n\n`
+                    + `⏰ زمان: ${new Date().toLocaleString('fa-IR')}\n`
+                    + `🔗 آماده دریافت پیام‌ها`
+                );
+            })
+            .catch(err => {
+                console.error('Failed to start bot:', err);
+            });
+        
+        // Enable graceful stop
+        process.once('SIGINT', () => this.bot.stop('SIGINT'));
+        process.once('SIGTERM', () => this.bot.stop('SIGTERM'));
+    }
 }
 
-// Start command
-bot.start(async (ctx) => {
-  const chatId = ctx.chat.id;
-  
-  if (chatId.toString() === ADMIN_TELEGRAM_ID) {
-    const welcomeMessage = `🤖 <b>ربات پشتیبانی وبسایت</b>\n\n`
-      + `سلام اپراتور عزیز!\n`
-      + `من ربات پل ارتباطی بین وبسایت و تلگرام هستم.\n\n`
-      + `🔹 <b>دستورات موجود:</b>\n`
-      + `/sessions - مشاهده جلسات فعال\n`
-      + `/help - راهنمایی\n\n`
-      + `هرگاه کاربری از وبسایت درخواست اتصال به اپراتور انسانی بدهد، به شما اطلاع می‌دهم.\n`
-      + `شما می‌توانید با پاسخ دادن به پیام‌های من، با کاربران صحبت کنید.`;
-    
-    await ctx.reply(welcomeMessage, { parse_mode: 'HTML' });
-  } else {
-    await ctx.reply('⛔ این ربات فقط برای اپراتورهای پشتیبانی است.');
-  }
-});
-
-// Sessions command
-bot.command('sessions', async (ctx) => {
-  const chatId = ctx.chat.id;
-  
-  if (chatId.toString() === ADMIN_TELEGRAM_ID) {
-    if (activeSessions.size === 0) {
-      await ctx.reply('📭 هیچ جلسه فعالی وجود ندارد.');
-    } else {
-      let message = `📊 <b>جلسات فعال</b>\n\n`;
-      
-      for (const [sessionId, adminChatId] of activeSessions.entries()) {
-        if (adminChatId === chatId.toString()) {
-          message += `🔹 جلسه: <code>${sessionId.substring(0, 8)}...</code>\n`;
-        }
-      }
-      
-      await ctx.reply(message, { parse_mode: 'HTML' });
+// Start bot if this file is run directly
+if (require.main === module) {
+    try {
+        new TelegramBot();
+    } catch (error) {
+        console.error('Failed to initialize bot:', error);
+        process.exit(1);
     }
-  }
-});
-
-// Help command
-bot.command('help', async (ctx) => {
-  const chatId = ctx.chat.id;
-  
-  if (chatId.toString() === ADMIN_TELEGRAM_ID) {
-    const helpMessage = `📖 <b>راهنمای اپراتور</b>\n\n`
-      + `شما به عنوان اپراتور پشتیبانی می‌توانید:\n\n`
-      + `1. منتظر بمانید تا کاربران از وبسایت درخواست اتصال به اپراتور انسانی کنند.\n`
-      + `2. زمانی که کاربر درخواست اتصال داد، به شما اطلاع می‌دهم.\n`
-      + `3. می‌توانید مستقیماً به پیام‌های من پاسخ دهید و پیام شما به کاربر وبسایت ارسال می‌شود.\n`
-      + `4. برای پایان دادن به جلسه، کاربر باید از وبسایت خارج شود.\n\n`
-      + `🔹 <b>نکات مهم:</b>\n`
-      + `• هر پیامی که می‌نویسید به کاربر ارسال می‌شود.\n`
-      + `• برای ارسال عکس یا فایل، از قابلیت‌های ربات استفاده کنید.\n`
-      + `• جلسه به طور خودکار پس از خروج کاربر بسته می‌شود.`;
-    
-    await ctx.reply(helpMessage, { parse_mode: 'HTML' });
-  }
-});
-
-// Handle text messages
-bot.on('text', async (ctx) => {
-  const chatId = ctx.chat.id;
-  const messageText = ctx.message.text;
-  const messageId = ctx.message.message_id;
-  
-  // Check if this is admin
-  if (chatId.toString() === ADMIN_TELEGRAM_ID) {
-    // Check if this is a reply to a bot message
-    if (ctx.message.reply_to_message) {
-      const repliedMessage = ctx.message.reply_to_message.text;
-      
-      // Extract session ID from bot's message (if exists)
-      const sessionMatch = repliedMessage.match(/شناسه جلسه: (\S+)/);
-      
-      if (sessionMatch) {
-        const sessionId = sessionMatch[1];
-        
-        // Store session
-        activeSessions.set(sessionId, chatId.toString());
-        
-        // Send message to backend
-        const success = await sendToBackend(sessionId, messageText);
-        
-        if (success) {
-          await ctx.reply(`✅ پیام شما ارسال شد.`, {
-            reply_to_message_id: messageId
-          });
-        } else {
-          await ctx.reply(`❌ خطا در ارسال پیام.`, {
-            reply_to_message_id: messageId
-          });
-        }
-      } else {
-        // Check if this session is already active
-        let foundSession = null;
-        for (const [sessionId, adminId] of activeSessions.entries()) {
-          if (adminId === chatId.toString()) {
-            foundSession = sessionId;
-            break;
-          }
-        }
-        
-        if (foundSession) {
-          // Send message to existing session
-          const success = await sendToBackend(foundSession, messageText);
-          
-          if (success) {
-            await ctx.reply(`✅ پیام شما ارسال شد.`, {
-              reply_to_message_id: messageId
-            });
-          } else {
-            await ctx.reply(`❌ خطا در ارسال پیام.`, {
-              reply_to_message_id: messageId
-            });
-          }
-        } else {
-          await ctx.reply(`⚠️ لطفاً ابتدا به یک پیام از من پاسخ دهید تا جلسه مشخص شود.`, {
-            reply_to_message_id: messageId
-          });
-        }
-      }
-    } else {
-      // Not a reply, check if there's an active session
-      let activeSession = null;
-      for (const [sessionId, adminId] of activeSessions.entries()) {
-        if (adminId === chatId.toString()) {
-          activeSession = sessionId;
-          break;
-        }
-      }
-      
-      if (activeSession) {
-        // Send message to active session
-        const success = await sendToBackend(activeSession, messageText);
-        
-        if (success) {
-          await ctx.reply(`✅ پیام شما ارسال شد.`, {
-            reply_to_message_id: messageId
-          });
-        } else {
-          await ctx.reply(`❌ خطا در ارصال پیام.`, {
-            reply_to_message_id: messageId
-          });
-        }
-      } else {
-        await ctx.reply(`ℹ️ لطفاً برای شروع مکالمه با کاربر، به یکی از پیام‌های اعلان من پاسخ دهید.`);
-      }
-    }
-  }
-});
-
-// Handle other types of messages (photos, documents, etc.)
-bot.on(['photo', 'document', 'audio', 'video'], async (ctx) => {
-  const chatId = ctx.chat.id;
-  
-  if (chatId.toString() === ADMIN_TELEGRAM_ID) {
-    await ctx.reply(`⚠️ در حال حاضر فقط پیام‌های متنی پشتیبانی می‌شوند.`, {
-      reply_to_message_id: ctx.message.message_id
-    });
-  }
-});
-
-// Error handling
-bot.catch((err, ctx) => {
-  console.error(`Error for ${ctx.updateType}:`, err);
-  
-  if (ctx.chat && ctx.chat.id.toString() === ADMIN_TELEGRAM_ID) {
-    ctx.reply(`❌ خطایی رخ داد: ${err.message}`).catch(console.error);
-  }
-});
-
-// Start bot
-async function startBot() {
-  try {
-    // Delete webhook first
-    await bot.telegram.deleteWebhook();
-    
-    // Start polling
-    await bot.launch();
-    console.log('Telegram bot started successfully!');
-    
-    // Enable graceful stop
-    process.once('SIGINT', () => bot.stop('SIGINT'));
-    process.once('SIGTERM', () => bot.stop('SIGTERM'));
-  } catch (error) {
-    console.error('Failed to start bot:', error);
-    process.exit(1);
-  }
 }
 
-startBot();
-
-module.exports = bot;
+module.exports = TelegramBot;
