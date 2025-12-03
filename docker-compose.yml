@@ -7,19 +7,8 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - GROQ_API_KEY=${GROQ_API_KEY}
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
-    restart: unless-stopped
-
-  telegram-bot:
-    build: .
-    command: sh -c "cd /app/telegram && node bot.js"
-    environment:
-      - NODE_ENV=production
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - ADMIN_TELEGRAM_ID=${ADMIN_TELEGRAM_ID}
-      - BACKEND_URL=http://backend:3000
-    depends_on:
-      - backend
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
     restart: unless-stopped
