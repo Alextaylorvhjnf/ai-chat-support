@@ -13,7 +13,6 @@ require('dotenv').config();
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ADMIN_TELEGRAM_ID = Number(process.env.ADMIN_TELEGRAM_ID);
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 let BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.BACKEND_URL || '';
 BASE_URL = BASE_URL.replace(/\/+$/, '').trim();
@@ -137,7 +136,9 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// ==================== هوش مصنوعی — دقیق، فوری، حرفه‌ای ====================
+// ==================== ۱۰۰٪ به دیتابیس سایت وصل — بدون Groq ====================
+const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
+
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
@@ -150,117 +151,70 @@ app.post('/api/chat', async (req, res) => {
     return res.json({ operatorConnected: true });
   }
 
-  const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
+  const lowerMsg = message.toLowerCase();
 
-  // تشخیص کد پیگیری — فوق‌العاده دقیق
+  // تشخیص کد پیگیری
   const codeMatch = message.match(/\b(\d{5,})\b|کد\s*(\d+)|پیگیری\s*(\d+)/i);
-  const isTrackingRequest = codeMatch || /\b(پیگیری|سفارش|کد|وضعیت|track)\b/i.test(message);
+  const isTracking = codeMatch || lowerMsg.includes('پیگیری') || lowerMsg.includes('سفارش') || lowerMsg.includes('کد') || lowerMsg.includes('وضعیت');
 
-  if (isTrackingRequest && !session.waitingForConfirm) {
-    try {
-      const code = codeMatch 
-        ? (codeMatch[1] || codeMatch[2] || codeMatch[3])
-        : message.replace(/\D/g, '').trim();
+  // تشخیص جستجوی محصول
+  const isProduct = lowerMsg.includes('قیمت') || lowerMsg.includes('موجودی') || lowerMsg.includes('دارید') || lowerMsg.includes('چنده');
+
+  try {
+    if (isTracking) {
+      const code = codeMatch ? (codeMatch[1] || codeMatch[2] || codeMatch[3]) : message.replace(/\D/g, '').trim();
 
       if (!code || code.length < 4) {
         return res.json({ success: true, message: 'لطفاً کد پیگیری معتبر وارد کنید (مثلاً 67025)' });
       }
 
-      const result = await axios.post(SHOP_API_URL, {
-        action: 'track_order',
-        tracking_code: code
-      }, { timeout: 8000 });
-
+      const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
       const data = result.data;
 
       if (data.found) {
         const items = data.order.items?.join('\n') || 'ندارد';
         const total = Number(data.order.total).toLocaleString();
+        const status = data.order.status || 'نامشخص';
 
-        const reply = `سفارش با کد \`${code}\` پیدا شد!\n\n` +
-                      `نام مشتری: **${data.order.customer_name || 'مشتری عزیز'}**\n` +
-                      `محصولات:\n${items}\n` +
-                      `مبلغ کل: ${total} تومان\n\n` +
-                      `آیا می‌خواهید وضعیت دقیق سفارش را بدانید؟`;
+        const reply = `سفارش شما با کد \`${code}\` پیدا شد!\n\n` +
+                      `وضعیت فعلی: **${status}**\n` +
+                      `مبلغ کل: ${total} تومان\n` +
+                      `تاریخ سفارش: ${data.order.date}\n` +
+                      `محصولات:\n${items}\n\n` +
+                      `اگر سؤال دیگه‌ای دارید، در خدمتم 😊`;
 
-        // ذخیره اطلاعات برای مرحله بعد
-        session.pendingOrder = { code, data: data.order };
-
-        // وضعیت انتظار برای تأیید
-        session.waitingForConfirm = true;
-
-        return res.json({
-          success: true,
-          message: reply,
-          buttons: [
-            [{ text: 'بله، وضعیت دقیق را بگو', callback_data: `confirm_status_${code}` }],
-            [{ text: 'خیر، ممنون', callback_data: 'cancel_status' }]
-          ]
-        });
-
+        session.messages.push({ role: 'assistant', content: reply });
+        return res.json({ success: true, message: reply });
       } else {
-        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد را چک کنید یا با اپراتور صحبت کنید.` });
+        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد. لطفاً کد را چک کنید.` });
       }
-
-    } catch (err) {
-      console.log('خطا در پیگیری:', err.message);
-      return res.json({ success: true, message: 'در حال حاضر نمی‌تونم سفارش رو پیدا کنم. لطفاً با اپراتور صحبت کنید.' });
     }
-  }
 
-  // وقتی کاربر دکمه بله رو زد
-  if (session.waitingForConfirm && session.pendingOrder) {
-    const order = session.pendingOrder.data;
-    const status = order.status || 'نامشخص';
+    if (isProduct) {
+      const result = await axios.post(SHOP_API_URL, { action: 'search_product', keyword: message }, { timeout: 8000 });
+      const data = result.data;
 
-    const finalReply = `وضعیت فعلی سفارش شما:\n\n` +
-                       `کد پیگیری: \`${session.pendingOrder.code}\`\n` +
-                       `وضعیت: **${status}**\n` +
-                       `تاریخ سفارش: ${order.date}\n\n` +
-                       `سفارش شما ${status === 'در حال پردازش' ? 'در حال آماده‌سازی است' : 
-                                   status === 'ارسال شده' ? 'توسط پست ارسال شده' : 
-                                   status === 'تکمیل شده' ? 'با موفقیت تحویل شده' : 
-                                   'در مرحله ' + status + ' قرار دارد'}\n\n` +
-                       `اگر سؤال دیگه‌ای دارید، خوشحال می‌شم کمک کنم 😊`;
+      if (data.products && data.products.length > 0) {
+        const reply = 'نتایج جستجو:\n\n' + data.products.slice(0, 4).map(p =>
+          `• ${p.name}\n   قیمت: ${Number(p.price).toLocaleString()} تومان\n   موجودی: ${p.stock}\n   🔗 ${p.url}`
+        ).join('\n\n');
 
-    // پاک کردن وضعیت انتظار
-    session.waitingForConfirm = false;
-    delete session.pendingOrder;
-
-    session.messages.push({ role: 'assistant', content: finalReply });
-    return res.json({ success: true, message: finalReply });
-  }
-
-  // لغو پیگیری
-  if (message.toLowerCase().includes('خیر') || message.includes('ممنون')) {
-    session.waitingForConfirm = false;
-    delete session.pendingOrder;
-    return res.json({ success: true, message: 'باشه! اگر سؤال دیگه‌ای داشتید، در خدمتم 😊' });
-  }
-
-  // برای بقیه سؤالات — هوش مصنوعی عادی
-  if (GROQ_API_KEY) {
-    try {
-      const aiRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'شما دستیار فروشگاه شیک پوشان هستید. فقط فارسی، مودب و حرفه‌ای جواب بده.' },
-          ...session.messages.slice(-10)
-        ],
-        temperature: 0.6,
-        max_tokens: 500
-      }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` } });
-
-      const text = aiRes.data.choices[0].message.content.trim();
-      session.messages.push({ role: 'assistant', content: text });
-      return res.json({ success: true, message: text });
-    } catch (err) {
-      console.error('Groq error:', err.message);
+        session.messages.push({ role: 'assistant', content: reply });
+        return res.json({ success: true, message: reply });
+      } else {
+        return res.json({ success: true, message: 'متأسفانه محصولی با این نام پیدا نشد.' });
+      }
     }
-  }
 
-  res.json({ success: false, requiresHuman: true });
+    // برای بقیه سؤالات
+    return res.json({ success: true, message: 'سلام! چطور می‌تونم کمکتون کنم؟\n\nمی‌تونید بپرسید:\n• پیگیری سفارش با کد\n• قیمت و موجودی محصول' });
+
+  } catch (err) {
+    console.log('خطا در اتصال به دیتابیس سایت:', err.message);
+    return res.json({ success: true, message: 'در حال حاضر نمی‌تونم به اطلاعات دسترسی داشته باشم. لطفاً با اپراتور صحبت کنید.' });
+  }
 });
+
 // ==================== سوکت ====================
 io.on('connection', (socket) => {
   socket.on('join-session', (sessionId) => socket.join(sessionId));
@@ -297,7 +251,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   try {
     await bot.telegram.setWebhook(`${BASE_URL}/telegram-webhook`);
     console.log('وب‌هوک تنظیم شد:', `${BASE_URL}/telegram-webhook`);
-    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `ربات آماده است\n${BASE_URL}`);
+    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `ربات آماده است (بدون هوش مصنوعی)\n${BASE_URL}`);
   } catch (err) {
     console.error('وب‌هوک خطا داد → Polling فعال شد');
     bot.launch();
