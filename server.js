@@ -9,7 +9,7 @@ const NodeCache = require('node-cache');
 const { Telegraf } = require('telegraf');
 require('dotenv').config();
 
-// ==================== تنظیمات ====================
+// تنظیمات
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ADMIN_TELEGRAM_ID = Number(process.env.ADMIN_TELEGRAM_ID);
@@ -19,7 +19,6 @@ BASE_URL = BASE_URL.replace(/\/+$/, '').trim();
 if (!BASE_URL) BASE_URL = 'https://ai-chat-support-production.up.railway.app';
 if (!BASE_URL.startsWith('http')) BASE_URL = 'https://' + BASE_URL;
 
-// ==================== سرور ====================
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
@@ -30,7 +29,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ==================== کش ====================
 const cache = new NodeCache({ stdTTL: 3600 });
 const botSessions = new Map();
 const shortId = (id) => String(id).substring(0, 12);
@@ -44,35 +42,20 @@ const getSession = (id) => {
   return s;
 };
 
-// ==================== ربات تلگرام ====================
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
+// تلگرام (پذیرش و رد)
 bot.action(/accept_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   const info = botSessions.get(short);
   if (!info) return ctx.answerCbQuery('منقضی شده');
-
   botSessions.set(short, { ...info, chatId: ctx.chat.id });
   getSession(info.fullId).connectedToHuman = true;
-
   await ctx.answerCbQuery('پذیرفته شد');
-  await ctx.editMessageText(`
-شما این گفتگو را پذیرفتید
-کاربر: ${info.userInfo?.name || 'ناشناس'}
-صفحه: ${info.userInfo?.page || 'نامشخص'}
-کد: ${short}
-  `.trim());
-
-  io.to(info.fullId).emit('operator-connected', {
-    message: 'اپراتور متصل شد! در حال انتقال به پشتیبان انسانی...'
-  });
-
+  await ctx.editMessageText(`شما این گفتگو را پذیرفتید\nکاربر: ${info.userInfo?.name || 'ناشناس'}\nکد: ${short}`);
+  io.to(info.fullId).emit('operator-connected', { message: 'اپراتور متصل شد!' });
   const session = getSession(info.fullId);
-  const history = session.messages
-    .filter(m => m.role === 'user')
-    .map(m => `کاربر: ${m.content}`)
-    .join('\n\n') || 'کاربر هنوز پیامی نفرستاده';
-
+  const history = session.messages.filter(m => m.role === 'user').map(m => `کاربر: ${m.content}`).join('\n\n') || 'هیچ پیامی نیست';
   await ctx.reply(`تاریخچه چت:\n\n${history}`);
 });
 
@@ -87,56 +70,44 @@ bot.on('text', async (ctx) => {
   const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
   if (!entry) return;
   io.to(entry[1].fullId).emit('operator-message', { message: ctx.message.text });
-  await ctx.reply('ارسال شد');
+  await ctx.reply('ارسال شد ✅');
 });
 
 app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
 
-// ==================== وب‌هوک ویجت ====================
 app.post('/webhook', async (req, res) => {
   if (req.body.event !== 'new_session') return res.json({ success: false });
-
   const { sessionId, userInfo, userMessage } = req.body.data;
   const short = shortId(sessionId);
-
   botSessions.set(short, { fullId: sessionId, userInfo: userInfo || {}, chatId: null });
-
-  const userName = userInfo?.name || 'ناشناس';
-  const userPage = userInfo?.page ? userInfo.page : 'نامشخص';
-
+  const name = userInfo?.name || 'ناشناس';
+  const page = userInfo?.page || 'نامشخص';
   await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `
-درخواست پشتیبانی جدید
-
-کد جلسه: ${short}
-نام: ${userName}
-صفحه: ${userPage}
-پیام اول: ${userMessage || 'درخواست اتصال به اپراتور'}
+درخواست جدید
+کد: ${short}
+نام: ${name}
+صفحه: ${page}
+پیام: ${userMessage || 'درخواست اتصال'}
   `.trim(), {
-    reply_markup: {
-      inline_keyboard: [[
-        { text: 'پذیرش', callback_data: `accept_${short}` },
-        { text: 'رد', callback_data: `reject_${short}` }
-      ]]
-    }
+    reply_markup: { inline_keyboard: [[
+      { text: 'پذیرش', callback_data: `accept_${short}` },
+      { text: 'رد', callback_data: `reject_${short}` }
+    ]] }
   });
-
   res.json({ success: true });
 });
 
-// ==================== اتصال به اپراتور ====================
 app.post('/api/connect-human', async (req, res) => {
   const { sessionId, userInfo } = req.body;
   getSession(sessionId).userInfo = userInfo || {};
-
   await axios.post(`${BASE_URL}/webhook`, {
     event: 'new_session',
     data: { sessionId, userInfo, userMessage: 'درخواست اتصال' }
   }).catch(() => {});
-
   res.json({ success: true, pending: true });
 });
 
-// ==================== دستیار ۱۰۰٪ واقعی — بدون هوش مصنوعی خارجی ====================
+// دستیار فروشگاه — دقیقاً طبق قوانین شما
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
 
 app.post('/api/chat', async (req, res) => {
@@ -151,82 +122,91 @@ app.post('/api/chat', async (req, res) => {
     return res.json({ operatorConnected: true });
   }
 
-  const lowerMsg = message.toLowerCase();
+  const lowerMsg = message.toLowerCase().trim();
 
   // تشخیص کد رهگیری
-  const codeMatch = message.match(/\b(\d{5,})\b|کد\s*(\d+)|پیگیری\s*(\d+)/i);
-  const isTracking = codeMatch || lowerMsg.includes('پیگیری') || lowerMsg.includes('سفارش') || lowerMsg.includes('کد') || lowerMsg.includes('وضعیت');
+  const codeMatch = message.match(/\b(\d{4,})\b/);
+  const hasOrderNumber = codeMatch || lowerMsg.includes('سفارش') || lowerMsg.includes('کد') || lowerMsg.includes('پیگیری') || lowerMsg.includes('وضعیت');
 
-  if (isTracking) {
-    try {
-      const code = codeMatch ? (codeMatch[1] || codeMatch[2] || codeMatch[3]) : message.replace(/\D/g, '').trim();
+  try {
+    // ۲. پیگیری سفارش
+    if (hasOrderNumber) {
+      const code = codeMatch ? codeMatch[1] : message.replace(/\D/g, '').trim();
 
       if (!code || code.length < 4) {
-        return res.json({ success: true, message: 'داداش کد رهگیری رو کامل بنویس 😊 مثلاً 67025' });
+        return res.json({ success: true, message: 'برای بررسی دقیق سفارش، لطفاً شماره سفارش و شماره موبایل ثبت‌شده را ارسال کنید.' });
       }
 
       const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
       const data = result.data;
 
       if (data.found) {
-        const items = data.order.items?.join('\n') || 'هیچ محصولی ثبت نشده';
+        const items = data.order.items?.join('\n') || 'ندارد';
         const total = Number(data.order.total).toLocaleString();
-        const status = data.order.status || 'نامشخص';
-        const customerName = data.order.customer_name || 'مشتری عزیز';
-        const gateway = data.order.payment || 'نامشخص';
+        const stage = data.order.stage;
 
-        const reply = `سلام ${customerName} عزیز! 😊\n\n` +
-                      `سفارشت با کد رهگیری \`${code}\` رو پیدا کردم!\n\n` +
-                      `محصولات:\n${items}\n\n` +
-                      `مبلغ کل: ${total} تومان\n` +
-                      `درگاه پرداخت: ${gateway}\n` +
-                      `وضعیت فعلی: **${status}**\n\n` +
-                      `هر وقت خواستی بگو وضعیت رو دوباره چک کنم یا سؤالی داشتی، در خدمتم! 💙`;
+        const reply = `وضعیت سفارش ${code}:\n` +
+                      `• وضعیت: ${data.order.status}\n` +
+                      `• مرحله فعلی: ${stage}\n` +
+                      `• تاریخ ثبت: ${data.order.date}\n` +
+                      `• درگاه پرداخت: ${data.order.payment}\n` +
+                      `• مبلغ: ${total} تومان\n` +
+                      `• محصولات:\n${items}\n\n` +
+                      `زمان تقریبی ارسال: ۲۴ تا ۷۲ ساعت کاری`;
 
-        session.messages.push({ role: 'assistant', content: reply });
         return res.json({ success: true, message: reply });
       } else {
-        return res.json({ success: true, message: `داداش سفارش با کد \`${code}\` پیدا نشد 😕\nکد رو دوباره چک کن یا با اپراتور صحبت کن، در خدمتم!` });
+        return res.json({ success: true, message: 'سفارش با این شماره پیدا نشد. لطفاً شماره سفارش و شماره موبایل ثبت‌شده را ارسال کنید.' });
       }
-    } catch (err) {
-      return res.json({ success: true, message: 'الان یه لحظه نت یه مشکلی داره، چند لحظه دیگه امتحان کن یا با اپراتور صحبت کن 😊' });
     }
-  }
 
-  // برای بقیه سؤالات
-  return res.json({ 
-    success: true, 
-    message: `سلام داداش! 😊\n\n` +
-             `می‌تونم کمکت کنم با:\n` +
-             `• پیگیری سفارش (کد رهگیری بده)\n` +
-             `• قیمت و موجودی محصول\n` +
-             `• هر سؤالی که داری!\n\n` +
-             `فقط بنویس، من اینجام! 💪`
-  });
+    // ۳. تاخیر یا عصبانیت
+    if (lowerMsg.includes('کی می‌رسه') || lowerMsg.includes('چرا دیر') || lowerMsg.includes('تاخیر')) {
+      return res.json({ success: true, message: 'سفارش شما در حال پردازش و آماده‌سازی است. فرآیند ارسال در حال انجام است و به‌زودی تحویل خواهد شد. در صورت تاخیر، تیم پشتیبانی در حال پیگیری است.' });
+    }
+
+    // ۴. ثبت سفارش یا نه؟
+    if (lowerMsg.includes('ثبت شده') || lowerMsg.includes('سفارشم ثبت شده')) {
+      return res.json({ success: true, message: 'برای بررسی ثبت سفارش، لطفاً شماره سفارش یا شماره موبایل ثبت‌شده هنگام خرید را ارسال کنید.' });
+    }
+
+    // ۵. سوالات عمومی
+    if (lowerMsg.includes('ارسال') || lowerMsg.includes('تحویل') || lowerMsg.includes('چند روز')) {
+      return res.json({ success: true, message: 'ارسال سفارش‌ها معمولاً ۲۴ تا ۷۲ ساعت کاری طول می‌کشد.\nپس از ارسال، کد رهگیری برای شما پیامک می‌شود.' });
+    }
+
+    if (lowerMsg.includes('پرداخت') || lowerMsg.includes('درگاه')) {
+      return res.json({ success: true, message: 'پرداخت فقط به صورت آنلاین و از طریق درگاه‌های امن انجام می‌شود.' });
+    }
+
+    if (lowerMsg.includes('پشتیبانی') || lowerMsg.includes('ساعت کاری')) {
+      return res.json({ success: true, message: 'پشتیبانی از ساعت ۱۰ صبح تا ۶ عصر فعال است.\nشماره تماس: 021-12345678' });
+    }
+
+    // ۶. سوال نامشخص
+    return res.json({ success: true, message: 'دقیق‌تر بفرمایید تا بهتر راهنمایی کنم.' });
+
+  } catch (err) {
+    return res.json({ success: true, message: 'در حال حاضر نتونستم به اطلاعات دسترسی داشته باشم. لطفاً با اپراتور صحبت کنید.' });
+  }
 });
 
-// ==================== سوکت ====================
+// سوکت
 io.on('connection', (socket) => {
   socket.on('join-session', (sessionId) => socket.join(sessionId));
-
   socket.on('user-message', async ({ sessionId, message }) => {
     if (!sessionId || !message) return;
     const short = shortId(sessionId);
     const info = botSessions.get(short);
-
     if (info?.chatId) {
-      const userName = info.userInfo?.name || 'ناشناس';
-      const userPage = info.userInfo?.page ? info.userInfo.page : 'نامشخص';
-
+      const name = info.userInfo?.name || 'ناشناس';
+      const page = info.userInfo?.page || 'نامشخص';
       await bot.telegram.sendMessage(info.chatId, `
 پیام جدید از کاربر
-
 کد: ${short}
-نام: ${userName}
-صفحه: ${userPage}
-
-پیام:
-${message}
+نام: ${name}
+صفحه: ${page}
+پیام: ${message}
       `.trim());
     }
   });
@@ -234,16 +214,12 @@ ${message}
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// ==================== راه‌اندازی ====================
 server.listen(PORT, '0.0.0.0', async () => {
-  console.log(`سرور روی پورت ${PORT} فعال شد`);
-
+  console.log(`دستیار فروشگاه فعال شد — پورت ${PORT}`);
   try {
     await bot.telegram.setWebhook(`${BASE_URL}/telegram-webhook`);
-    console.log('وب‌هوک تنظیم شد:', `${BASE_URL}/telegram-webhook`);
-    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `دستیار واقعی فعال شد (بدون هوش مصنوعی)\n${BASE_URL}`);
+    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `دستیار فروشگاه فعال شد ✅\n${BASE_URL}`);
   } catch (err) {
-    console.error('وب‌هوک خطا داد → Polling فعال شد');
     bot.launch();
   }
 });
