@@ -136,8 +136,24 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// ==================== دستیار واقعی — ۱۰۰٪ کار می‌کنه ====================
+// ==================== دستیار فروشگاه — دقیق، سریع، خودکار، بدون هوش مصنوعی خارجی ====================
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
+
+// کش دسته‌بندی‌ها (هر 30 دقیقه بروز میشه)
+let categories = [];
+
+async function loadCategories() {
+  try {
+    const res = await axios.post(SHOP_API_URL, { action: 'get_categories' }, { timeout: 8000 });
+    categories = res.data.categories || [];
+    console.log(`دسته‌بندی‌ها بروز شد: ${categories.length} دسته`);
+  } catch (err) {
+    console.log('خطا در دریافت دسته‌بندی‌ها:', err.message);
+  }
+}
+
+loadCategories();
+setInterval(loadCategories, 30 * 60 * 1000);
 
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
@@ -155,7 +171,13 @@ app.post('/api/chat', async (req, res) => {
 
   // تشخیص کد رهگیری
   const codeMatch = message.match(/\b(\d{5,})\b|کد\s*(\d+)|پیگیری\s*(\d+)/i);
-  const hasOrderNumber = codeMatch || /\b(سفارش|کد|پیگیری|وضعیت)\b/i.test(lowerMsg);
+  const hasOrderNumber = codeMatch || /\b(سفارش|کد|پیگیری|وضعیت|رهگیری)\b/i.test(lowerMsg);
+
+  // تشخیص محصول یا دسته‌بندی
+  const matchedCategory = categories.find(cat => 
+    lowerMsg.includes(cat.name.toLowerCase()) || 
+    lowerMsg.includes(cat.slug.toLowerCase())
+  );
 
   try {
     // ۱. پیگیری سفارش
@@ -163,7 +185,7 @@ app.post('/api/chat', async (req, res) => {
       const code = codeMatch ? (codeMatch[1] || codeMatch[2] || codeMatch[3]) : message.replace(/\D/g, '').trim();
 
       if (!code || code.length < 4) {
-        return res.json({ success: true, message: 'لطفاً کد رهگیری رو کامل بفرستید 😊 مثلاً 67025' });
+        return res.json({ success: true, message: 'برای بررسی دقیق سفارش، لطفاً شماره سفارش و شماره موبایل ثبت‌شده رو بفرستید 🙏' });
       }
 
       const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
@@ -173,33 +195,50 @@ app.post('/api/chat', async (req, res) => {
         const items = data.order.items?.join('\n') || 'ندارد';
         const total = Number(data.order.total).toLocaleString();
         const status = data.order.status || 'نامشخص';
+        const date = data.order.date || 'نامشخص';
+        const payment = data.order.payment || 'نامشخص';
 
-        const reply = `سفارش با کد \`${code}\` پیدا شد!\n\n` +
-                      `وضعیت: **${status}**\n` +
-                      `مبلغ: ${total} تومان\n` +
+        const reply = `سفارش شما با کد \`${code}\` پیدا شد!\n\n` +
+                      `وضعیت: ${status}\n` +
+                      `تاریخ ثبت: ${date}\n` +
+                      `درگاه پرداخت: ${payment}\n` +
+                      `مبلغ کل: ${total} تومان\n` +
                       `محصولات:\n${items}\n\n` +
-                      `به‌زودی برات ارسال می‌شه 😊`;
+                      `به‌زودی براتون ارسال می‌شه 😊`;
 
         return res.json({ success: true, message: reply });
       } else {
-        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد رو دوباره چک کنید 🙏` });
+        return res.json({ success: true, message: 'سفارش با این کد پیدا نشد.\nلطفاً شماره سفارش و شماره موبایل ثبت‌شده رو بفرستید تا دقیق‌تر بررسی کنیم 🙏' });
       }
     }
 
-    // ۲. اگر هیچی نبود — پیام خوش‌آمدگویی
-    const welcome = `سلام داداش! 😊\n\n` +
-                    `من دستیار فروشگاه شیک پوشانم\n` +
-                    `هر چی بخوای بپرس:\n` +
-                    `• کد رهگیری بده → وضعیت سفارشتو میگم\n` +
-                    `• قیمت یا موجودی محصول بپرس\n` +
-                    `• سایز یا مدل بگو → راهنمایی می‌کنم\n\n` +
-                    `فقط بنویس، من اینجام! 💪`;
+    // ۲. معرفی دسته‌بندی — کاملاً خودکار
+    if (matchedCategory) {
+      return res.json({ success: true, message: `بله ${matchedCategory.name} داریم! 😍\n\n` +
+        `همین الان برو ببین:\n${matchedCategory.url}\n\n` +
+        `هر کدوم رو خواستی بپرس، کمکت می‌کنم!` });
+    }
 
-    return res.json({ success: true, message: welcome });
+    // ۳. تاخیر یا عصبانیت
+    if (lowerMsg.includes('دیر') || lowerMsg.includes('چرا') || lowerMsg.includes('کی می‌رسه') || lowerMsg.includes('تاخیر')) {
+      return res.json({ success: true, message: 'کاملاً درک می‌کنم که این موضوع براتون مهم هست 🙏\nسفارش شما در حال پردازش و آماده‌سازی هست. فرآیند ارسال در حال انجامه و به‌زودی تحویل داده می‌شه.\nاگر تاخیری باشه، تیم پشتیبانی داره پیگیری می‌کنه.' });
+    }
+
+    // ۴. ثبت سفارش یا نه؟
+    if (lowerMsg.includes('ثبت شده') || lowerMsg.includes('سفارشم ثبت شده')) {
+      return res.json({ success: true, message: 'برای بررسی ثبت سفارش، لطفاً شماره سفارش یا شماره موبایل ثبت‌شده هنگام خرید رو بفرستید 🙏' });
+    }
+
+    // ۵. سوالات عمومی
+    if (lowerMsg.includes('ارسال') || lowerMsg.includes('تحویل') || lowerMsg.includes('چند روزه')) {
+      return res.json({ success: true, message: 'ارسال سفارش‌ها معمولاً بین ۲۴ تا ۷۲ ساعت کاری انجام می‌شه 🚚\nبعد از ارسال، کد رهگیری براتون پیامک می‌شه.' });
+    }
+
+    // ۶. سوال نامشخص
+    return res.json({ success: true, message: 'سلام! 😊 چطور می‌تونم کمکتون کنم؟\n\nمی‌تونید بپرسید:\n• پیگیری سفارش\n• قیمت و موجودی محصول\n• سایزبندی\n• نحوه ارسال و پرداخت' });
 
   } catch (err) {
-    console.error('خطا در دستیار:', err.message);
-    return res.json({ success: true, message: 'الان یه لحظه نت مشکل داره 🙏\nچند لحظه دیگه امتحان کن یا با اپراتور صحبت کن' });
+    return res.json({ success: true, message: 'در حال حاضر نتونستم به اطلاعات دسترسی داشته باشم 🙏\nلطفاً با اپراتور انسانی صحبت کنید، سریع‌تر راهنمایی‌تون می‌کنه!' });
   }
 });
 
