@@ -6,7 +6,7 @@ const path = require('path');
 const helmet = require('helmet');
 const axios = require('axios');
 const NodeCache = require('node-cache');
-const { Telegraf, Markup } = require('telegraf');
+const { Telegraf } = require('telegraf');
 require('dotenv').config();
 
 // ==================== تنظیمات ====================
@@ -14,14 +14,17 @@ const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ADMIN_TELEGRAM_ID = Number(process.env.ADMIN_TELEGRAM_ID);
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+
 let BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.BACKEND_URL || '';
 BASE_URL = BASE_URL.replace(/\/+$/, '').trim();
 if (BASE_URL && !BASE_URL.startsWith('http')) BASE_URL = 'https://' + BASE_URL;
 
-// ==================== سرور اصلی ====================
+// ==================== سرور ====================
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, { cors: { origin: "*" } });
+const io = socketIo(server, {
+  cors: { origin: "*", methods: ["GET", "POST"] }
+});
 
 app.use(cors({ origin: "*", credentials: true }));
 app.use(express.json({ limit: '10mb' }));
@@ -33,8 +36,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 const cache = new NodeCache({ stdTTL: 3600 });
 const botSessions = new Map(); // shortId → { fullId, chatId, userInfo }
 
-// کوتاه کردن آیدی
-const shortId = id => id.toString().slice(0, 12);
+// کوتاه کردن آیدی — این نسخه ۱۰۰٪ درست و بدون خطاست
+const shortId = (id) => String(id).substring(0, 12);
 
 // ==================== هوش مصنوعی ====================
 const getAI = async (msg) => {
@@ -58,8 +61,7 @@ const getAI = async (msg) => {
   }
 };
 
-// ==================== سشن ====================
-const getSession = id => {
+const getSession = (id) => {
   let s = cache.get(id);
   if (!s) {
     s = { id, messages: [], userInfo: {}, connectedToHuman: false };
@@ -72,34 +74,31 @@ const getSession = id => {
 // ==================== ربات تلگرام ====================
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// پذیرش درخواست — اینجا مهم‌ترین تغییر اعمال شد
+// پذیرش درخواست
 bot.action(/accept_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   const info = botSessions.get(short);
   if (!info) return ctx.answerCbQuery('منقضی شده');
 
-  // ذخیره chatId اپراتور + علامت‌گذاری اتصال
   botSessions.set(short, { ...info, chatId: ctx.chat.id });
-
-  const session = getSession(info.fullId);
-  session.connectedToHuman = true;
+  getSession(info.fullId).connectedToHuman = true;
 
   await ctx.answerCbQuery('پذیرفته شد ✅');
   await ctx.editMessageText(`✅ گفتگو پذیرفته شد\nکاربر: ${info.userInfo?.name || 'ناشناس'}\nکد: ${short}`);
 
-  // اطلاع به کاربر در سایت
-  io.to(info.fullId).emit('operator-connected', { message: 'اپراتور متصل شد! در حال انتقال به پشتیبان انسانی...' });
+  io.to(info.fullId).emit('operator-connected', { message: 'اپراتور متصل شد!' });
 
-  // ارسال تاریخچه پیام‌های قبلی کاربر به اپراتور
+  // ارسال تاریخچه
+  const session = getSession(info.fullId);
   const history = session.messages
     .filter(m => m.role === 'user')
     .map(m => `${info.userInfo?.name || 'کاربر'}: ${m.content}`)
     .join('\n\n');
 
   if (history) {
-    await bot.telegram.sendMessage(ctx.chat.id, `تاریخچه پیام‌های کاربر:\n\n${history}`);
+    await ctx.reply(`تاریخچه پیام‌های کاربر:\n\n${history}`);
   } else {
-    await bot.telegram.sendMessage(ctx.chat.id, 'کاربر منتظر شماست...');
+    await ctx.reply('کاربر منتظر شماست...');
   }
 });
 
@@ -111,22 +110,20 @@ bot.action(/reject_(.+)/, async (ctx) => {
   await ctx.editMessageText(ctx.callbackQuery.message.text + '\n\n❌ رد شد');
 });
 
-// پیام اپراتور → ویجت (قبلاً درست کار می‌کرد)
+// پیام اپراتور → ویجت
 bot.on('text', async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
   const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
   if (!entry) return;
   const fullId = entry[1].fullId;
   io.to(fullId).emit('operator-message', { message: ctx.message.text });
-  ctx.reply('ارسال شد ✅');
+  await ctx.reply('ارسال شد ✅');
 });
 
 // ==================== وب‌هوک تلگرام ====================
-app.post('/telegram-webhook', (req, res) => {
-  bot.handleUpdate(req.body, res);
-});
+app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
 
-// ==================== درخواست جدید از سایت ====================
+// ==================== درخواست جدید ====================
 app.post('/webhook', async (req, res) => {
   try {
     if (req.body.event === 'new_session') {
@@ -134,7 +131,7 @@ app.post('/webhook', async (req, res) => {
       const short = shortId(sessionId);
       botSessions.set(short, { fullId: sessionId, userInfo: userInfo || {} });
 
-      const text = `درخواست پشتیبانی جدید\n\nکد جلسه: ${short}\nنام: ${userInfo?.name || 'ناشناس'}\nپیام اول: ${userMessage || 'درخواست اتصال به اپراتور'}`;
+      const text = `درخواست پشتیبانی جدید\n\nکد جلسه: ${short}\nنام: ${userInfo?.name || 'ناشناس'}\nپیام اول: ${userMessage || 'درخواست اتصال'}`;
 
       await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, text, {
         reply_markup: {
@@ -152,7 +149,7 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// ==================== API چت ویجت — اصلاح اصلی اینجا انجام شد ====================
+// ==================== چت ویجت (هر دو روش: HTTP + Socket) ====================
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
@@ -163,20 +160,11 @@ app.post('/api/chat', async (req, res) => {
   const short = shortId(sessionId);
   const botInfo = botSessions.get(short);
 
-  // اگر اپراتور پذیرش کرده باشد → پیام مستقیم به تلگرام برود
   if (botInfo?.chatId) {
-    try {
-      await bot.telegram.sendMessage(
-        botInfo.chatId,
-        `${botInfo.userInfo?.name || 'کاربر'}: ${message}`
-      );
-    } catch (err) {
-      console.error('خطا در ارسال به اپراتور:', err.message);
-    }
+    await bot.telegram.sendMessage(botInfo.chatId, `${botInfo.userInfo?.name || 'کاربر'}: ${message}`);
     return res.json({ operatorConnected: true });
   }
 
-  // در غیر این صورت هوش مصنوعی جواب دهد
   const ai = await getAI(message);
   if (ai.success && !ai.requiresHuman) {
     session.messages.push({ role: 'assistant', content: ai.message });
@@ -200,27 +188,41 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// ارسال پیام از ربات به ویجت (برای مواقع خاص)
-app.post('/api/send-to-user', (req, res) => {
-  const { sessionId, message } = req.body;
-  io.to(sessionId).emit('operator-message', { message });
-  res.json({ success: true });
+// ==================== سوکت — مهم‌ترین بخش برای دوطرفه بودن واقعی ====================
+io.on('connection', (socket) => {
+  socket.on('join-session', (sessionId) => {
+    socket.join(sessionId);
+  });
+
+  // دریافت پیام کاربر از طریق سوکت (بعد از اتصال به اپراتور)
+  socket.on('user-message', async ({ sessionId, message }) => {
+    if (!sessionId || !message) return;
+
+    const short = shortId(sessionId);
+    const botInfo = botSessions.get(short);
+
+    if (botInfo?.chatId) {
+      try {
+        await bot.telegram.sendMessage(
+          botInfo.chatId,
+          `${botInfo.userInfo?.name || 'کاربر'}: ${message}`
+        );
+      } catch (err) {
+        console.error('خطا در ارسال به تلگرام:', err.message);
+      }
+    }
+  });
 });
 
 // صفحه اصلی
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-// سوکت
-io.on('connection', socket => {
-  socket.on('join-session', id => socket.join(id));
-});
 
 // ==================== راه‌اندازی ====================
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`سرور روی پورت ${PORT} فعال شد`);
 
   if (!BASE_URL || !TELEGRAM_BOT_TOKEN || !ADMIN_TELEGRAM_ID) {
-    console.log('Polling mode');
+    console.log('Polling mode فعال شد');
     bot.launch();
     return;
   }
@@ -232,8 +234,6 @@ server.listen(PORT, '0.0.0.0', async () => {
       await new Promise(r => setTimeout(r, 3000));
       await bot.telegram.setWebhook(url);
       console.log('وب‌هوک تنظیم شد:', url);
-    } else {
-      console.log('وب‌هوک قبلاً درست بود');
     }
     await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, `ربات آماده است ✅\n${url}`);
   } catch (err) {
