@@ -107,7 +107,7 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// دستیار فروشگاه — دقیقاً طبق قوانین شما
+// دستیار واقعی — ۱۰۰٪ از دیتابیس، دقیق، بدون سوال اضافه
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
 
 app.post('/api/chat', async (req, res) => {
@@ -117,78 +117,56 @@ app.post('/api/chat', async (req, res) => {
   const session = getSession(sessionId);
   session.messages.push({ role: 'user', content: message });
 
-  const short = shortId(sessionId);
-  if (botSessions.get(short)?.chatId) {
+  if (botSessions.has(shortId(sessionId)) && botSessions.get(shortId(sessionId)).chatId) {
     return res.json({ operatorConnected: true });
   }
 
-  const lowerMsg = message.toLowerCase().trim();
+  const msg = message.trim();
+  const code = msg.match(/\b(\d{4,})\b/)?.[1];
 
-  // تشخیص کد رهگیری
-  const codeMatch = message.match(/\b(\d{4,})\b/);
-  const hasOrderNumber = codeMatch || lowerMsg.includes('سفارش') || lowerMsg.includes('کد') || lowerMsg.includes('پیگیری') || lowerMsg.includes('وضعیت');
-
-  try {
-    // ۲. پیگیری سفارش
-    if (hasOrderNumber) {
-      const code = codeMatch ? codeMatch[1] : message.replace(/\D/g, '').trim();
-
-      if (!code || code.length < 4) {
-        return res.json({ success: true, message: 'برای بررسی دقیق سفارش، لطفاً شماره سفارش و شماره موبایل ثبت‌شده را ارسال کنید.' });
-      }
-
+  if (code) {
+    try {
       const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
       const data = result.data;
 
       if (data.found) {
-        const items = data.order.items?.join('\n') || 'ندارد';
+        const items = data.order.items.join('\n');
         const total = Number(data.order.total).toLocaleString();
-        const stage = data.order.stage;
+        const status = data.order.status;
+        const customerName = data.order.customer_name;
 
-        const reply = `وضعیت سفارش ${code}:\n` +
-                      `• وضعیت: ${data.order.status}\n` +
-                      `• مرحله فعلی: ${stage}\n` +
-                      `• تاریخ ثبت: ${data.order.date}\n` +
-                      `• درگاه پرداخت: ${data.order.payment}\n` +
-                      `• مبلغ: ${total} تومان\n` +
-                      `• محصولات:\n${items}\n\n` +
-                      `زمان تقریبی ارسال: ۲۴ تا ۷۲ ساعت کاری`;
+        let reply = `سلام ${customerName} عزیز! 😊\n\n` +
+                    `سفارش شما با کد رهگیری \`${code}\` پیدا شد!\n\n` +
+                    `وضعیت فعلی: **${status}**\n` +
+                    `تاریخ ثبت: ${data.order.date}\n` +
+                    `درگاه پرداخت: ${data.order.payment}\n` +
+                    `مبلغ کل: ${total} تومان\n\n` +
+                    `محصولات:\n${items}\n\n`;
+
+        if (status.includes('لغو') || status.includes('cancelled')) {
+          reply += `سفارش شما لغو شده است.\nاگر سؤالی دارید در خدمتم 💙`;
+        } else {
+          reply += `سفارش شما ${status === 'در حال پردازش' ? 'در حال آماده‌سازی است' : 
+                     status === 'ارسال شده' ? 'توسط پست ارسال شده' : 
+                     status === 'تکمیل شده' ? 'با موفقیت تحویل شده' : 
+                     'در مرحله ' + status + ' قرار دارد'}\n\n` +
+                     `به‌زودی براتون ارسال می‌شه! اگر سؤالی بود در خدمتم 💙`;
+        }
 
         return res.json({ success: true, message: reply });
       } else {
-        return res.json({ success: true, message: 'سفارش با این شماره پیدا نشد. لطفاً شماره سفارش و شماره موبایل ثبت‌شده را ارسال کنید.' });
+        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد رهگیری رو دوباره چک کنید 🙏` });
       }
+    } catch (err) {
+      return res.json({ success: true, message: 'الان نتونستم به سیستم دسترسی داشته باشم 🙏\nچند لحظه دیگه امتحان کنید یا با اپراتور صحبت کنید' });
     }
-
-    // ۳. تاخیر یا عصبانیت
-    if (lowerMsg.includes('کی می‌رسه') || lowerMsg.includes('چرا دیر') || lowerMsg.includes('تاخیر')) {
-      return res.json({ success: true, message: 'سفارش شما در حال پردازش و آماده‌سازی است. فرآیند ارسال در حال انجام است و به‌زودی تحویل خواهد شد. در صورت تاخیر، تیم پشتیبانی در حال پیگیری است.' });
-    }
-
-    // ۴. ثبت سفارش یا نه؟
-    if (lowerMsg.includes('ثبت شده') || lowerMsg.includes('سفارشم ثبت شده')) {
-      return res.json({ success: true, message: 'برای بررسی ثبت سفارش، لطفاً شماره سفارش یا شماره موبایل ثبت‌شده هنگام خرید را ارسال کنید.' });
-    }
-
-    // ۵. سوالات عمومی
-    if (lowerMsg.includes('ارسال') || lowerMsg.includes('تحویل') || lowerMsg.includes('چند روز')) {
-      return res.json({ success: true, message: 'ارسال سفارش‌ها معمولاً ۲۴ تا ۷۲ ساعت کاری طول می‌کشد.\nپس از ارسال، کد رهگیری برای شما پیامک می‌شود.' });
-    }
-
-    if (lowerMsg.includes('پرداخت') || lowerMsg.includes('درگاه')) {
-      return res.json({ success: true, message: 'پرداخت فقط به صورت آنلاین و از طریق درگاه‌های امن انجام می‌شود.' });
-    }
-
-    if (lowerMsg.includes('پشتیبانی') || lowerMsg.includes('ساعت کاری')) {
-      return res.json({ success: true, message: 'پشتیبانی از ساعت ۱۰ صبح تا ۶ عصر فعال است.\nشماره تماس: 021-12345678' });
-    }
-
-    // ۶. سوال نامشخص
-    return res.json({ success: true, message: 'دقیق‌تر بفرمایید تا بهتر راهنمایی کنم.' });
-
-  } catch (err) {
-    return res.json({ success: true, message: 'در حال حاضر نتونستم به اطلاعات دسترسی داشته باشم. لطفاً با اپراتور صحبت کنید.' });
   }
+
+  // خوش‌آمدگویی
+  return res.json({ success: true, message: `سلام! 😊\n\n` +
+    `من دستیار فروشگاه شیک پوشانم\n` +
+    `برای پیگیری سفارش، فقط کد رهگیری رو بفرست (مثلاً 7123)\n` +
+    `یا هر سؤالی داری بپرس، در خدمتم!` });
 });
 
 // سوکت
