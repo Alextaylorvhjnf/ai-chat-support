@@ -93,7 +93,7 @@ bot.on('text', async (ctx) => {
 
 app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
 
-// وب‌هوک ویجت
+// ==================== وب‌هوک ویجت ====================
 app.post('/webhook', async (req, res) => {
   if (req.body.event !== 'new_session') return res.json({ success: false });
 
@@ -124,7 +124,7 @@ app.post('/webhook', async (req, res) => {
   res.json({ success: true });
 });
 
-// اتصال به اپراتور
+// ==================== اتصال به اپراتور ====================
 app.post('/api/connect-human', async (req, res) => {
   const { sessionId, userInfo } = req.body;
   getSession(sessionId).userInfo = userInfo || {};
@@ -137,7 +137,7 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// ==================== هوش مصنوعی — فوری پیگیری با اتصال به دیتابیس سایت ====================
+// ==================== هوش مصنوعی — دقیق، فوری، حرفه‌ای ====================
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
   if (!message || !sessionId) return res.status(400).json({ error: 'داده ناقص' });
@@ -150,80 +150,69 @@ app.post('/api/chat', async (req, res) => {
     return res.json({ operatorConnected: true });
   }
 
-  // اتصال مستقیم به دیتابیس سایت shikpooshaan.ir
-  const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php'; // آدرس سایتت — بدون تغییر!
+  const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
 
-  // تشخیص فوری کد پیگیری (دقیق و سریع)
-  const trackingMatch = message.match(/(\d{6,}|TRK\d+|ORD\d+)/i) || message.match(/کد\s+(\d+)/i);
-  const isTracking = trackingMatch || /\b(پیگیری|سفارش|کد|ترک|track)\b/i.test(message);
-  const isProduct = /\b(قیمت|موجودی|دارید|چنده|خرید|آیفون|سامسونگ|لپتاپ)\b/i.test(message);
+  // تشخیص کد پیگیری — فوق‌العاده دقیق
+  const codeMatch = message.match(/\b(\d{5,})\b|کد\s*(\d+)|پیگیری\s*(\d+)/i);
+  const isTrackingRequest = codeMatch || /\b(پیگیری|سفارش|کد|وضعیت|track|trk|order)\b/i.test(message);
 
-  if (isTracking) {
+  if (isTrackingRequest) {
     try {
-      const code = trackingMatch ? trackingMatch[1] : message.trim();
-      const result = await axios.post(SHOP_API_URL, { 
-        action: 'track_order', 
-        tracking_code: code 
-      }, { timeout: 5000 }); // فوری — ۵ ثانیه تایم‌اوت
+      const code = codeMatch 
+        ? (codeMatch[1] || codeMatch[2] || codeMatch[3])
+        : message.replace(/\D/g, '').trim();
+
+      if (!code || code.length < 4) {
+        return res.json({ success: true, message: 'لطفاً کد پیگیری معتبر وارد کنید (مثلاً 67025)' });
+      }
+
+      const result = await axios.post(SHOP_API_URL, {
+        action: 'track_order',
+        tracking_code: code
+      }, { timeout: 8000 });
 
       const data = result.data;
+      let reply;
 
-      let reply = '';
       if (data.found) {
-        reply = `سفارش شما با کد \`${data.order.tracking_code}\` پیدا شد!\n\n` +
-          `در مرحله: **${data.order.status_stage || data.order.status}**\n` +  // دقیق "در فلان مرحله"
-          `مبلغ کل: ${Number(data.order.total).toLocaleString()} تومان\n` +
-          `تاریخ سفارش: ${data.order.date}\n` +
-          `محصولات:\n${data.order.items.join('\n')}\n\n` +
-          `اگر سؤال دیگه‌ای داری، بگو! 😊`;
+        const status = data.order.status || 'نامشخص';
+        const total = Number(data.order.total).toLocaleString();
+        const date = data.order.date || 'نامشخص';
+        const items = data.order.items?.join('\n') || 'ندارد';
+
+        reply = `سفارش شما با کد پیگیری \`${code}\` پیدا شد!\n\n` +
+                `وضعیت فعلی: **${status}**\n` +
+                `مبلغ کل: ${total} تومان\n` +
+                `تاریخ سفارش: ${date}\n` +
+                `محصولات:\n${items}\n\n` +
+                `هر سؤالی داشتید در خدمتم 😊`;
+
       } else {
-        reply = `سفارش با کد \`${code}\` پیدا نشد. لطفاً کد پیگیری رو دقیق وارد کن (مثل 123456 یا TRK123).\n\nمی‌تونی با اپراتور انسانی چت کنی؟`;
+        reply = `سفارش با کد \`${code}\` پیدا نشد.\n\n` +
+                `ممکنه کد اشتباه باشه یا هنوز ثبت نشده باشه.\n` +
+                `لطفاً کد رو دوباره چک کنید یا با اپراتور صحبت کنید.`;
       }
 
       session.messages.push({ role: 'assistant', content: reply });
       return res.json({ success: true, message: reply });
 
     } catch (err) {
-      console.log('خطا در اتصال به دیتابیس سایت:', err.message);
-      // اگر سایت قطع بود، هوش مصنوعی عادی جواب بده
+      console.log('خطا در پیگیری سفارش:', err.message);
     }
   }
 
-  // جستجوی محصول (اگر قیمت یا موجودی پرسید)
-  if (isProduct) {
-    try {
-      const result = await axios.post(SHOP_API_URL, { 
-        action: 'search_product', 
-        keyword: message 
-      }, { timeout: 5000 });
-
-      const data = result.data;
-      let reply = data.products.length
-        ? `نتایج جستجو در فروشگاه:\n\n` + data.products.slice(0, 3).map(p =>
-            `• ${p.name}\n   قیمت: ${Number(p.price).toLocaleString()} تومان\n   موجودی: ${p.stock}\n   🔗 ${p.url}`
-          ).join('\n\n')
-        : 'متأسفانه محصولی با این نام پیدا نشد. جزئیات بیشتری بگو!';
-
-      session.messages.push({ role: 'assistant', content: reply });
-      return res.json({ success: true, message: reply });
-
-    } catch (err) {
-      console.log('خطا در جستجوی محصول:', err.message);
-    }
-  }
-
-  // هوش مصنوعی عادی برای سؤال‌های دیگه (همیشه جواب میده)
+  // اگر درخواست پیگیری نبود — هوش مصنوعی عادی (Groq)
   if (GROQ_API_KEY) {
     try {
       const aiRes = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
         model: 'llama-3.3-70b-versatile',
         messages: [
-          { role: 'system', content: 'شما دستیار فروشگاه shikpooshaan.ir هستید. فقط فارسی و مودب جواب بده. اگر کد پیگیری داد، فوری پیگیری کن.' },
-          ...session.messages.slice(-8) // فقط ۸ پیام آخر
+          { role: 'system', content: 'شما دستیار فروشگاه شیک پوشان (shikpooshaan.ir) هستید. فقط فارسی، مودب و حرفه‌ای جواب بده. اگر کاربر کد پیگیری داد، حتماً بگو از سیستم پیگیری می‌کنم.' },
+          ...session.messages.slice(-10)
         ],
-        temperature: 0.7,
+        temperature: 0.6,
         max_tokens: 500
-      }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` }, timeout: 10000 });
+      }, { headers: { Authorization: `Bearer ${GROQ_API_KEY}` }, timeout: 12000 });
 
       const text = aiRes.data.choices[0].message.content.trim();
       session.messages.push({ role: 'assistant', content: text });
@@ -233,11 +222,10 @@ app.post('/api/chat', async (req, res) => {
     }
   }
 
-  // اگر هیچی کار نکرد
   res.json({ success: false, requiresHuman: true });
 });
 
-// سوکت
+// ==================== سوکت ====================
 io.on('connection', (socket) => {
   socket.on('join-session', (sessionId) => socket.join(sessionId));
 
@@ -266,7 +254,7 @@ ${message}
 
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
-// راه‌اندازی
+// ==================== راه‌اندازی ====================
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`سرور روی پورت ${PORT} فعال شد`);
 
