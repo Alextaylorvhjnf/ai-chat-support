@@ -1,4 +1,4 @@
-const express = require('express');
+
 const cors = require('cors');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -15,7 +15,7 @@ console.log('='.repeat(60));
 
 const PORT = process.env.PORT || 3000;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
-const TELEGRAM_BOT_URL = process.env.TELEGRAM_BOT_URL || 'https://ai-chat-support-production.up.railway.app';
+const TELEGRAM_BOT_URL = process.env.TELEGRAM_BOT_URL || 'http://localhost:3001';
 
 console.log('📌 Port:', PORT);
 console.log('🤖 AI:', GROQ_API_KEY ? '✅ ENABLED' : '❌ DISABLED');
@@ -688,4 +688,4 @@ process.on('uncaughtException', (error) => {
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('🔥 Unhandled Rejection at:', promise, 'reason:', reason);
-});
+});   
