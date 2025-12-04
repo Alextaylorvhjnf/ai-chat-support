@@ -48,44 +48,31 @@ class ChatWidget {
         }
         // اضافه کردن انیمیشن pulse برای دکمه
         const style = document.createElement('style');
-       style.textContent = `
-            .chat-toggle-btn {
-                position: relative !important;
-                display: inline-flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-            }
-            .notification-badge {
-                position: absolute !important;
-                top: -8px !important;
-                right: -8px !important;
-                background: #e74c3c !important;
-                color: white !important;
-                font-size: 11px !important;
-                font-weight: bold !important;
-                min-width: 20px !important;
-                height: 20px !important;
-                border-radius: 50% !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-                border: 3px solid white !important;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.4) !important;
-                z-index: 9999 !important;
-                animation: pulse-badge 1.5s infinite !important;
-            }
-            @keyframes pulse-badge {
-                0% { transform: scale(1); }
-                50% { transform: scale(1.15); }
-                100% { transform: scale(1); }
-            }
+        style.textContent = `
             @keyframes pulse {
                 0% { transform: scale(1); }
-                50% { transform: scale(1.2); }
+                50% { transform: scale(1.18); }
                 100% { transform: scale(1); }
             }
             .chat-toggle-btn.pulse {
                 animation: pulse 0.6s ease-in-out;
+            }
+            .notification-badge {
+                position: absolute;
+                top: -8px;
+                right: -8px;
+                background: #e74c3c;
+                color: white;
+                font-size: 11px;
+                font-weight: bold;
+                min-width: 18px;
+                height: 18px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border: 2px solid white;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
             }
         `;
         document.head.appendChild(style);
