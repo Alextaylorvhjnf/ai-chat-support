@@ -87,7 +87,9 @@ class ChatWidget {
             </button>
             <div class="chat-window">
                 <div class="chat-header">
-                                        <div class="chat-logo"><i class="fas fa-robot"></i></div>
+<div class="chat-logo">
+    <img src="https://shikpooshaan.ir/LOGO.jpeg" alt="Logo" style="width: 50px; height: 50px; object-fit: contain;">
+</div>
 
                     <div class="header-left">
 
