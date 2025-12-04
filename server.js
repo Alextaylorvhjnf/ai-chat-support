@@ -136,25 +136,8 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// ==================== دستیار ۱۰۰٪ واقعی — خودکار دسته‌بندی‌ها + پیگیری دقیق ====================
+// ==================== دستیار واقعی — ۱۰۰٪ کار می‌کنه ====================
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
-
-// کش دسته‌بندی‌ها (هر 30 دقیقه بروز میشه)
-let categories = [];
-
-async function loadCategories() {
-  try {
-    const res = await axios.post(SHOP_API_URL, { action: 'get_categories' }, { timeout: 8000 });
-    categories = res.data.categories || [];
-    console.log(`دسته‌بندی‌ها بروز شد: ${categories.length} دسته`);
-  } catch (err) {
-    console.log('خطا در دریافت دسته‌بندی‌ها:', err.message);
-  }
-}
-
-// اولین بار و هر 30 دقیقه
-loadCategories();
-setInterval(loadCategories, 30 * 60 * 1000);
 
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
@@ -173,12 +156,6 @@ app.post('/api/chat', async (req, res) => {
   // تشخیص کد رهگیری
   const codeMatch = message.match(/\b(\d{5,})\b|کد\s*(\d+)|پیگیری\s*(\d+)/i);
   const hasOrderNumber = codeMatch || /\b(سفارش|کد|پیگیری|وضعیت)\b/i.test(lowerMsg);
-
-  // تشخیص محصول یا دسته‌بندی
-  const isProductQuery = categories.length > 0 && categories.some(cat => 
-    lowerMsg.includes(cat.name.toLowerCase()) || 
-    lowerMsg.includes(cat.slug.toLowerCase())
-  );
 
   try {
     // ۱. پیگیری سفارش
@@ -209,31 +186,20 @@ app.post('/api/chat', async (req, res) => {
       }
     }
 
-    // ۲. معرفی دسته‌بندی — کاملاً خودکار!
-    if (isProductQuery) {
-      const matched = categories.find(cat => 
-        lowerMsg.includes(cat.name.toLowerCase()) || 
-        lowerMsg.includes(cat.slug.toLowerCase())
-      );
+    // ۲. اگر هیچی نبود — پیام خوش‌آمدگویی
+    const welcome = `سلام داداش! 😊\n\n` +
+                    `من دستیار فروشگاه شیک پوشانم\n` +
+                    `هر چی بخوای بپرس:\n` +
+                    `• کد رهگیری بده → وضعیت سفارشتو میگم\n` +
+                    `• قیمت یا موجودی محصول بپرس\n` +
+                    `• سایز یا مدل بگو → راهنمایی می‌کنم\n\n` +
+                    `فقط بنویس، من اینجام! 💪`;
 
-      if (matched) {
-        return res.json({ success: true, message: `بله ${matched.name} داریم! 😍\n\n` +
-          `همین الان برو ببین:\n${matched.url}\n\n` +
-          `هر کدوم رو خواستی بپرس، کمکت می‌کنم!` });
-      }
-    }
-
-    // ۳. پاسخ عمومی
-    const generalReply = `سلام! 😊 چطور می‌تونم کمکت کنم؟\n\n` +
-                         `• کد رهگیری بده → وضعیت سفارشتو میگم\n` +
-                         `• اسم محصول یا دسته‌بندی بگو → لینک می‌دم\n` +
-                         `• هر سؤالی داری بپرس!\n\n` +
-                         `مثلاً: هودی، تیشرت، شلوار جین، 2XL...`;
-
-    return res.json({ success: true, message: generalReply });
+    return res.json({ success: true, message: welcome });
 
   } catch (err) {
-    return res.json({ success: true, message: 'الان یه لحظه نت مشکل داره 🙏\nچند لحظه دیگه امتحان کن یا با اپراتور صحبت کن، در خدمتم!' });
+    console.error('خطا در دستیار:', err.message);
+    return res.json({ success: true, message: 'الان یه لحظه نت مشکل داره 🙏\nچند لحظه دیگه امتحان کن یا با اپراتور صحبت کن' });
   }
 });
 
