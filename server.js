@@ -530,7 +530,7 @@ app.get('/api/test-api', async (req, res) => {
     }
 });
 
-// سیستم چت اصلی
+// ==================== سیستم چت اصلی ====================
 app.post('/api/chat', async (req, res) => {
     try {
         const { message, sessionId, userInfo } = req.body;
@@ -571,32 +571,32 @@ app.post('/api/chat', async (req, res) => {
             if (apiResult.found) {
                 const order = apiResult.order;
                 
-                const reply = `🎯 **سفارش شما پیدا شد!** ✨\n\n` +
-                             `📦 **کد سفارش:** ${order.number}\n` +
-                             `👤 **مشتری:** ${order.customer_name}\n` +
-                             `📅 **تاریخ ثبت:** ${order.date}\n` +
-                             `🟢 **وضعیت:** ${order.status}\n` +
-                             `💰 **مبلغ کل:** ${Number(order.total).toLocaleString('fa-IR')} تومان\n\n` +
-                             `🛍️ **محصولات:**\n` +
-                             `${order.items.map((item, i) => `   ${i+1}. ${item}`).join('\n')}\n\n` +
-                             `✅ **پیگیری شما کامل شد!**\n` +
-                             `اگر سوال دیگری دارید، با کمال میل در خدمتتونم. 😊`;
+                const trackingReply = `🎯 **سفارش شما پیدا شد!** ✨\n\n` +
+                                     `📦 **کد سفارش:** ${order.number}\n` +
+                                     `👤 **مشتری:** ${order.customer_name}\n` +
+                                     `📅 **تاریخ ثبت:** ${order.date}\n` +
+                                     `🟢 **وضعیت:** ${order.status}\n` +
+                                     `💰 **مبلغ کل:** ${Number(order.total).toLocaleString('fa-IR')} تومان\n\n` +
+                                     `🛍️ **محصولات:**\n` +
+                                     `${order.items.map((item, i) => `   ${i+1}. ${item}`).join('\n')}\n\n` +
+                                     `✅ **پیگیری شما کامل شد!**\n` +
+                                     `اگر سوال دیگری دارید، با کمال میل در خدمتتونم. 😊`;
                 
-                session.messages.push({ role: 'assistant', content: reply });
+                session.messages.push({ role: 'assistant', content: trackingReply });
                 cache.set(sessionId, session);
-                return res.json({ success: true, message: reply });
+                return res.json({ success: true, message: trackingReply });
                 
             } else {
-                const reply = `❌ **سفارشی با این کد پیدا نشد!**\n\n` +
-                             `کد **${analysis.code}** در سیستم ما ثبت نیست.\n\n` +
-                             `💡 **راهنمایی:**\n` +
-                             `• کد را دوباره بررسی کنید\n` +
-                             `• ممکن است سفارش هنوز ثبت نشده باشد\n` +
-                             `• برای بررسی دقیق‌تر، "اپراتور" را تایپ کنید`;
+                const noTrackingReply = `❌ **سفارشی با این کد پیدا نشد!**\n\n` +
+                                       `کد **${analysis.code}** در سیستم ما ثبت نیست.\n\n` +
+                                       `💡 **راهنمایی:**\n` +
+                                       `• کد را دوباره بررسی کنید\n` +
+                                       `• ممکن است سفارش هنوز ثبت نشده باشد\n` +
+                                       `• برای بررسی دقیق‌تر، "اپراتور" را تایپ کنید`;
                 
-                session.messages.push({ role: 'assistant', content: reply });
+                session.messages.push({ role: 'assistant', content: noTrackingReply });
                 cache.set(sessionId, session);
-                return res.json({ success: true, message: reply });
+                return res.json({ success: true, message: noTrackingReply });
             }
         }
         
@@ -645,16 +645,16 @@ app.post('/api/chat', async (req, res) => {
                 } catch (error) {
                     console.error('خطا در جستجوی محصول:', error);
                     
-                    const errorReply = `⚠️ **خطا در جستجوی محصولات!**\n\n` +
-                                     `سیستم موقتاً با مشکل مواجه شده.\n\n` +
-                                     `🔄 **لطفاً:**\n` +
-                                     `• چند لحظه دیگر دوباره تلاش کنید\n` +
-                                     `• یا "اپراتور" رو تایپ کنید`;
+                    const searchErrorReply = `⚠️ **خطا در جستجوی محصولات!**\n\n` +
+                                           `سیستم موقتاً با مشکل مواجه شده.\n\n` +
+                                           `🔄 **لطفاً:**\n` +
+                                           `• چند لحظه دیگر دوباره تلاش کنید\n` +
+                                           `• یا "اپراتور" رو تایپ کنید`;
                     
-                    session.messages.push({ role: 'assistant', content: errorReply });
+                    session.messages.push({ role: 'assistant', content: searchErrorReply });
                     cache.set(sessionId, session);
                     io.to(sessionId).emit('ai-message', {
-                        message: errorReply,
+                        message: searchErrorReply,
                         type: 'error'
                     });
                 }
@@ -674,28 +674,28 @@ app.post('/api/chat', async (req, res) => {
         // ========== سلام ==========
         if (analysis.type === 'greeting') {
             const greeting = responses.greeting();
-            const reply = `${greeting}\n\n` +
-                         `**چطور می‌تونم کمکتون کنم؟** 🤗\n\n` +
-                         `می‌تونید:\n` +
-                         `• کد پیگیری سفارش رو وارد کنید 📦\n` +
-                         `• محصول خاصی رو جستجو کنید 🔍\n` +
-                         `• از من بخواهید پیشنهاد بدم 🎁\n` +
-                         `• یا برای صحبت با "اپراتور" بنویسید 👤`;
+            const greetingReply = `${greeting}\n\n` +
+                                 `**چطور می‌تونم کمکتون کنم؟** 🤗\n\n` +
+                                 `می‌تونید:\n` +
+                                 `• کد پیگیری سفارش رو وارد کنید 📦\n` +
+                                 `• محصول خاصی رو جستجو کنید 🔍\n` +
+                                 `• از من بخواهید پیشنهاد بدم 🎁\n` +
+                                 `• یا برای صحبت با "اپراتور" بنویسید 👤`;
             
-            session.messages.push({ role: 'assistant', content: reply });
+            session.messages.push({ role: 'assistant', content: greetingReply });
             cache.set(sessionId, session);
-            return res.json({ success: true, message: reply });
+            return res.json({ success: true, message: greetingReply });
         }
         
         // ========== تشکر ==========
         if (analysis.type === 'thanks') {
-            const reply = `${responses.thanks()}\n\n` +
-                         `**امر دیگری هست که بتونم کمکتون کنم؟** 🌸\n\n` +
-                         `همیشه در خدمت شما هستم!`;
+            const thanksReply = `${responses.thanks()}\n\n` +
+                               `**امر دیگری هست که بتونم کمکتون کنم؟** 🌸\n\n` +
+                               `همیشه در خدمت شما هستم!`;
             
-            session.messages.push({ role: 'assistant', content: reply });
+            session.messages.push({ role: 'assistant', content: thanksReply });
             cache.set(sessionId, session);
-            return res.json({ success: true, message: reply });
+            return res.json({ success: true, message: thanksReply });
         }
         
         // ========== اپراتور ==========
@@ -728,19 +728,19 @@ app.post('/api/chat', async (req, res) => {
                 );
             }
             
-            const reply = `✅ **درخواست شما ثبت شد!**\n\n` +
-                         `کارشناسان ما در تلگرام مطلع شدند و به زودی با شما ارتباط برقرار می‌کنند.\n\n` +
-                         `⏳ **لطفاً منتظر بمانید...**\n` +
-                         `کد جلسه شما: **${short}**`;
+            const operatorReply = `✅ **درخواست شما ثبت شد!**\n\n` +
+                                 `کارشناسان ما در تلگرام مطلع شدند و به زودی با شما ارتباط برقرار می‌کنند.\n\n` +
+                                 `⏳ **لطفاً منتظر بمانید...**\n` +
+                                 `کد جلسه شما: **${short}**`;
             
-            session.messages.push({ role: 'assistant', content: reply });
+            session.messages.push({ role: 'assistant', content: operatorReply });
             cache.set(sessionId, session);
-            return res.json({ success: true, message: reply });
+            return res.json({ success: true, message: operatorReply });
         }
         
-              // ========== پاسخ پیش‌فرض هوشمند ==========
+        // ========== پاسخ پیش‌فرض هوشمند ==========
         if (session.lastSearch) {
-            const smartReply = `🤔 **متوجه پیامتون شدم!**\n\n` +  // ← اسم رو عوض کن به smartReply
+            const smartReply = `🤔 **متوجه پیامتون شدم!**\n\n` +
                              `آیا دنبال محصولاتی مثل **"${session.lastSearch.type}"** هستید؟\n\n` +
                              `✨ **می‌تونید:**\n` +
                              `• نام دقیق محصول رو بگید\n` +
@@ -748,39 +748,39 @@ app.post('/api/chat', async (req, res) => {
                              `• کد پیگیری سفارش رو وارد کنید\n` +
                              `• یا "اپراتور" رو برای کمک بیشتر تایپ کنید`;
             
-            session.messages.push({ role: 'assistant', content: smartReply });  // ← اینجا هم smartReply
+            session.messages.push({ role: 'assistant', content: smartReply });
             cache.set(sessionId, session);
             return res.json({ success: true, message: smartReply });
         }
         
         // پاسخ نهایی
-        const finalReply = `🌈 **سلام! خوش اومدید به شیک‌پوشان!**\n\n` +  // ← اینجا finalReply
-                          `من دستیار هوشمند شیک‌پوشان هستم و اینجا هستم تا کمکتون کنم:\n\n` +
-                          `✨ **می‌تونم:**\n` +
-                          `• پیگیری سفارش با کد رهگیری 📦\n` +
-                          `• جستجوی محصولات با رنگ و سایز 🔍\n` +
-                          `• پیشنهاد محصولات ویژه 🎁\n` +
-                          `• اتصال به اپراتور انسانی 👤\n\n` +
-                          `**لطفاً انتخاب کنید:**\n` +
-                          `"کد پیگیری" ، "جستجو" ، "پیشنهاد" یا "اپراتور"`;
+        const welcomeReply = `🌈 **سلام! خوش اومدید به شیک‌پوشان!**\n\n` +
+                           `من دستیار هوشمند شیک‌پوشان هستم و اینجا هستم تا کمکتون کنم:\n\n` +
+                           `✨ **می‌تونم:**\n` +
+                           `• پیگیری سفارش با کد رهگیری 📦\n` +
+                           `• جستجوی محصولات با رنگ و سایز 🔍\n` +
+                           `• پیشنهاد محصولات ویژه 🎁\n` +
+                           `• اتصال به اپراتور انسانی 👤\n\n` +
+                           `**لطفاً انتخاب کنید:**\n` +
+                           `"کد پیگیری" ، "جستجو" ، "پیشنهاد" یا "اپراتور"`;
         
-        session.messages.push({ role: 'assistant', content: finalReply });
+        session.messages.push({ role: 'assistant', content: welcomeReply });
         cache.set(sessionId, session);
-        return res.json({ success: true, message: finalReply });
+        return res.json({ success: true, message: welcomeReply });
         
     } catch (error) {
         console.error('❌ خطا در سیستم چت:', error);
         
-        const errorReply = `⚠️ **اوه! یه مشکلی پیش اومده!**\n\n` +
-                          `سیستم موقتاً با مشکل مواجه شده.\n\n` +
-                          `🔄 **لطفاً:**\n` +
-                          `• چند لحظه صبر کنید و دوباره تلاش کنید\n` +
-                          `• یا "اپراتور" رو تایپ کنید\n\n` +
-                          `با تشکر از صبر و شکیبایی شما 🙏`;
+        const systemErrorReply = `⚠️ **اوه! یه مشکلی پیش اومده!**\n\n` +
+                               `سیستم موقتاً با مشکل مواجه شده.\n\n` +
+                               `🔄 **لطفاً:**\n` +
+                               `• چند لحظه صبر کنید و دوباره تلاش کنید\n` +
+                               `• یا "اپراتور" رو تایپ کنید\n\n` +
+                               `با تشکر از صبر و شکیبایی شما 🙏`;
         
         return res.json({ 
             success: false, 
-            message: errorReply 
+            message: systemErrorReply 
         });
     }
 });
