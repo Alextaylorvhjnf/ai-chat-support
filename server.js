@@ -7,6 +7,7 @@ const helmet = require('helmet');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const { Telegraf } = require('telegraf');
+const multer = require('multer');
 require('dotenv').config();
 
 // تنظیمات
@@ -29,6 +30,8 @@ app.use(express.urlencoded({ extended: true }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+const upload = multer({ storage: multer.memoryStorage() });
+
 const cache = new NodeCache({ stdTTL: 3600 });
 const botSessions = new Map();
 const shortId = (id) => String(id).substring(0, 12);
@@ -44,7 +47,7 @@ const getSession = (id) => {
 
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// تلگرام (پذیرش و رد)
+// تلگرام
 bot.action(/accept_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   const info = botSessions.get(short);
@@ -107,8 +110,20 @@ app.post('/api/connect-human', async (req, res) => {
   res.json({ success: true, pending: true });
 });
 
-// دستیار فروشگاه — دقیقاً طبق قوانین شما، کوتاه، شفاف، کاربردی
+// دستیار واقعی — ۱۰۰٪ از دیتابیس، دقیق، سریع
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
+
+let categories = [];
+
+async function loadCategories() {
+  try {
+    const res = await axios.post(SHOP_API_URL, { action: 'get_categories' });
+    categories = res.data.categories || [];
+  } catch (err) {}
+}
+
+loadCategories();
+setInterval(loadCategories, 30 * 60 * 1000);
 
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
@@ -124,78 +139,99 @@ app.post('/api/chat', async (req, res) => {
 
   const lowerMsg = message.toLowerCase().trim();
 
-  // تشخیص کد رهگیری
+  // کد رهگیری
   const codeMatch = message.match(/\b(\d{4,})\b/);
-  const hasOrderNumber = codeMatch || lowerMsg.includes('سفارش') || lowerMsg.includes('کد') || lowerMsg.includes('پیگیری') || lowerMsg.includes('وضعیت');
+  const hasOrder = codeMatch || lowerMsg.includes('سفارش') || lowerMsg.includes('کد') || lowerMsg.includes('پیگیری') || lowerMsg.includes('وضعیت');
 
-  try {
-    if (hasOrderNumber) {
-      const code = codeMatch ? codeMatch[1] : message.replace(/\D/g, '').trim();
+  if (hasOrder) {
+    const code = codeMatch ? codeMatch[1] : message.replace(/\D/g, '').trim();
 
-      if (!code || code.length < 4) {
-        return res.json({ success: true, message: 'برای بررسی دقیق سفارش، لطفاً شماره سفارش و شماره موبایل ثبت‌شده را ارسال کنید.' });
-      }
+    if (!code || code.length < 4) {
+      return res.json({ success: true, message: 'برای بررسی سفارش، لطفاً کد رهگیری رو بفرستید 😊' });
+    }
 
-      const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code }, { timeout: 8000 });
+    try {
+      const result = await axios.post(SHOP_API_URL, { action: 'track_order', tracking_code: code });
       const data = result.data;
 
       if (data.found) {
-        const reply = `وضعیت سفارش ${code}:\n` +
-                      `• وضعیت: ${data.order.status}\n` +
-                      `• مرحله فعلی: ${data.order.stage}\n` +
-                      `• تاریخ ثبت: ${data.order.date}\n` +
-                      `• درگاه پرداخت: ${data.order.payment}\n` +
-                      `• مبلغ: ${Number(data.order.total).toLocaleString()} تومان\n` +
-                      `• محصولات:\n${data.order.items.join('\n')}\n\n` +
-                      `زمان تقریبی ارسال: ۲۴ تا ۷۲ ساعت کاری`;
+        const items = data.order.items.join('\n');
+        const total = Number(data.order.total).toLocaleString();
+
+        const reply = `سلام ${data.order.customer_name} عزیز!\n\n` +
+                      `سفارش با کد \`${code}\` پیدا شد!\n\n` +
+                      `وضعیت: **${data.order.status}**\n` +
+                      `تاریخ ثبت: ${data.order.date}\n` +
+                      `درگاه پرداخت: ${data.order.payment}\n` +
+                      `مبلغ: ${total} تومان\n` +
+                      `محصولات:\n${items}\n\n` +
+                      `به‌زودی براتون ارسال می‌شه 😊`;
 
         return res.json({ success: true, message: reply });
       } else {
-        return res.json({ success: true, message: 'سفارش با این شماره پیدا نشد. لطفاً شماره سفارش و شماره موبایل ثبت‌شده را ارسال کنید.' });
+        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد رو دوباره چک کنید 🙏` });
       }
+    } catch (err) {
+      return res.json({ success: true, message: 'الان نتونستم سفارش رو چک کنم 🙏\nچند لحظه دیگه امتحان کنید' });
     }
-
-    // تاخیر یا عصبانی
-    if (lowerMsg.includes('کی می‌رسه') || lowerMsg.includes('چرا دیر') || lowerMsg.includes('تاخیر') || lowerMsg.includes('چند ساعت گذشته')) {
-      return res.json({ success: true, message: 'سفارش شما در حال پردازش و آماده‌سازی است. فرآیند ارسال در حال انجام است و به‌زودی تحویل خواهد شد. در صورت تاخیر، تیم پشتیبانی در حال پیگیری است.' });
-    }
-
-    // ثبت شده یا نه؟
-    if (lowerMsg.includes('ثبت شده') || lowerMsg.includes('سفارشم ثبت شده')) {
-      return res.json({ success: true, message: 'برای بررسی ثبت سفارش، لطفاً شماره سفارش یا شماره موبایل ثبت‌شده هنگام خرید را ارسال کنید.' });
-    }
-
-    // سوالات عمومی
-    if (lowerMsg.includes('ارسال') || lowerMsg.includes('تحویل')) {
-      return res.json({ success: true, message: 'ارسال سفارش‌ها معمولاً ۲۴ تا ۷۲ ساعت کاری طول می‌کشد. پس از ارسال، کد رهگیری پیامک می‌شود.' });
-    }
-
-    // سوال نامشخص
-    return res.json({ success: true, message: 'دقیق‌تر بفرمایید تا بهتر راهنمایی کنم.' });
-
-  } catch (err) {
-    return res.json({ success: true, message: 'در حال حاضر نتونستم به اطلاعات دسترسی داشته باشم. لطفاً با اپراتور صحبت کنید.' });
   }
+
+  // پیشنهاد محصول — خودکار
+  const matched = categories.find(cat => lowerMsg.includes(cat.name.toLowerCase()));
+  if (matched) {
+    return res.json({ success: true, message: `بله ${matched.name} داریم! 😍\n\n` +
+      `همین الان برو ببین:\n${matched.url}\n\n` +
+      `هر کدوم رو خواستی بپرس، کمکت می‌کنم!` });
+  }
+
+  // خوش‌آمدگویی
+  return res.json({ success: true, message: `سلام! 😊\n\n` +
+    `من دستیار فروشگاه شیک پوشانم\n` +
+    `کد رهگیری بده → وضعیت سفارشتو میگم\n` +
+    `اسم محصول بگو → لینک می‌دم\n` +
+    `هر سؤالی داری بپرس!` });
 });
 
-// سوکت
+// ارسال فایل و ویس از ویجت به تلگرام اپراتور
 io.on('connection', (socket) => {
   socket.on('join-session', (sessionId) => socket.join(sessionId));
+
   socket.on('user-message', async ({ sessionId, message }) => {
     if (!sessionId || !message) return;
     const short = shortId(sessionId);
     const info = botSessions.get(short);
     if (info?.chatId) {
-      const name = info.userInfo?.name || 'ناشناس';
-      const page = info.userInfo?.page || 'نامشخص';
-      await bot.telegram.sendMessage(info.chatId, `
-پیام جدید از کاربر
-کد: ${short}
-نام: ${name}
-صفحه: ${page}
-پیام: ${message}
-      `.trim());
+      await bot.telegram.sendMessage(info.chatId, `پیام جدید از کاربر (کد: ${short})\n${message}`);
     }
+  });
+
+  // ارسال فایل
+  socket.on('user-file', async ({ sessionId, fileName, fileBase64 }) => {
+    const short = shortId(sessionId);
+    const info = botSessions.get(short);
+    if (info?.chatId) {
+      const buffer = Buffer.from(fileBase64, 'base64');
+      await bot.telegram.sendDocument(info.chatId, { source: buffer, filename: fileName });
+    }
+  });
+
+  // ارسال ویس
+  socket.on('user-voice', async ({ sessionId, voiceBase64 }) => {
+    const short = shortId(sessionId);
+    const info = botSessions.get(short);
+    if (info?.chatId) {
+      const buffer = Buffer.from(voiceBase64, 'base64');
+      await bot.telegram.sendVoice(info.chatId, { source: buffer });
+    }
+  });
+
+  // پیام اپراتور به کاربر
+  bot.on('text', async (ctx) => {
+    if (ctx.message.text.startsWith('/')) return;
+    const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
+    if (!entry) return;
+    io.to(entry[1].fullId).emit('operator-message', { message: ctx.message.text });
+    await ctx.reply('ارسال شد ✅');
   });
 });
 
