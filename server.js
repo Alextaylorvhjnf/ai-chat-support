@@ -22,14 +22,10 @@ if (!BASE_URL.startsWith('http')) BASE_URL = 'https://' + BASE_URL;
 
 // ==================== اتصال به دیتابیس ====================
 const dbConfig = {
-    host: process.env.MYSQLHOST || process.env.DB_HOST || 'localhost',
-    port: process.env.MYSQLPORT || 3306,
-    user: process.env.MYSQLUSER || process.env.DB_USER || 'apmsho_shikpooshan',
-    password: process.env.MYSQLPASSWORD || process.env.DB_PASS || '5W2nn}@tkm8926G*',
-    database: process.env.MYSQLDATABASE || process.env.DB_NAME || 'apmsho_shikpooshan',
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+    host: 'shikpooshaan.ir',
+    user: 'apmsho_shikpooshan',
+    password: '5W2nn}@tkm8926G*',
+    database: 'apmsho_shikpooshan'
 };
 
 let dbPool;
@@ -37,16 +33,13 @@ let dbPool;
 async function initializeDatabase() {
     try {
         dbPool = mysql.createPool(dbConfig);
-        const connection = await dbPool.getConnection();
-        console.log('✅ اتصال به دیتابیس موفقیت‌آمیز بود');
-        connection.release();
+        console.log('✅ اتصال به دیتابیس موفق');
         return true;
     } catch (error) {
         console.error('❌ خطا در اتصال به دیتابیس:', error.message);
         return false;
     }
 }
-
 // ==================== سرور ====================
 const app = express();
 const server = http.createServer(app);
