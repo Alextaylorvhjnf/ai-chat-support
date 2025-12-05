@@ -1,4 +1,3 @@
-// ==================== IMPORTS ====================
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
@@ -8,10 +7,8 @@ const helmet = require('helmet');
 const axios = require('axios');
 const NodeCache = require('node-cache');
 const { Telegraf } = require('telegraf');
-const mysql = require('mysql2/promise');
 require('dotenv').config();
-
-// ==================== CONFIG ====================
+// ==================== تنظیمات ====================
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const ADMIN_TELEGRAM_ID = Number(process.env.ADMIN_TELEGRAM_ID);
@@ -19,48 +16,19 @@ let BASE_URL = process.env.RAILWAY_STATIC_URL || process.env.BACKEND_URL || '';
 BASE_URL = BASE_URL.replace(/\/+$/, '').trim();
 if (!BASE_URL) BASE_URL = 'https://ai-chat-support-production.up.railway.app';
 if (!BASE_URL.startsWith('http')) BASE_URL = 'https://' + BASE_URL;
-
-// ==================== DATABASE ====================
-const DB_HOST = process.env.DB_HOST || 'localhost';
-const DB_USER = process.env.DB_USER || '';
-const DB_PASSWORD = process.env.DB_PASSWORD || '';
-const DB_NAME = process.env.DB_NAME || '';
-
-let db;
-(async () => {
-  try {
-    db = await mysql.createPool({
-      host: DB_HOST,
-      user: DB_USER,
-      password: DB_PASSWORD,
-      database: DB_NAME,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-      charset: 'utf8mb4'
-    });
-    console.log('✅ دیتابیس متصل شد');
-  } catch (err) {
-    console.error('❌ خطا در اتصال دیتابیس:', err);
-  }
-})();
-
-// ==================== EXPRESS + SOCKET ====================
+// ==================== سرور ====================
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
-
-app.use(cors());
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
-
-// ==================== CACHE & SESSIONS ====================
+// ==================== کش ====================
 const cache = new NodeCache({ stdTTL: 3600 });
 const botSessions = new Map();
 const shortId = (id) => String(id).substring(0, 12);
-
 const getSession = (id) => {
   let s = cache.get(id);
   if (!s) {
@@ -69,68 +37,25 @@ const getSession = (id) => {
   }
   return s;
 };
-
-// ==================== INTERNAL AI ====================
-async function internalAI(message, session) {
-  // بررسی کلمات کلیدی
-  const keywords = ['لباس', 'پیراهن', 'شلوار', 'کفش', 'پیشنهاد', 'سفارش', 'کد رهگیری'];
+// ==================== الگوریتم هوش داخلی ====================
+function internalAI(message, session) {
+  const keywords = ['لباس', 'پیراهن', 'شلوار', 'کفش', 'پیشنهاد'];
   const hasSuggestion = keywords.some(k => message.includes(k));
-
-  // اگر درخواست محصول یا پیشنهاد بود
-  if (hasSuggestion && db) {
-    try {
-      // استخراج رنگ و سایز
-      const colorMatch = message.match(/(قرمز|آبی|سفید|مشکی|سبز|زرد|نارنجی|صورتی)/i);
-      const sizeMatch = message.match(/(S|M|L|XL|XXL|\d{1,3})/i);
-      const color = colorMatch ? colorMatch[0] : null;
-      const size = sizeMatch ? sizeMatch[0] : null;
-      const keyword = message.replace(new RegExp(`(${[...['قرمز','آبی','سبز','سفید','مشکی','زرد','نارنجی','صورتی'], ...['S','M','L','XL','XXL']].join('|')})`, 'gi'), '').trim();
-
-      // کوئری محصولات
-      let query = `SELECT p.ID, p.post_title, pm_color.meta_value AS color, pm_size.meta_value AS size,
-                          pm_price.meta_value AS price, pm_stock.meta_value AS stock
-                   FROM wp_posts p
-                   LEFT JOIN wp_postmeta pm_color ON pm_color.post_id=p.ID AND pm_color.meta_key='attribute_pa_color'
-                   LEFT JOIN wp_postmeta pm_size ON pm_size.post_id=p.ID AND pm_size.meta_key='attribute_pa_size'
-                   LEFT JOIN wp_postmeta pm_price ON pm_price.post_id=p.ID AND pm_price.meta_key='_price'
-                   LEFT JOIN wp_postmeta pm_stock ON pm_stock.post_id=p.ID AND pm_stock.meta_key='_stock_status'
-                   WHERE p.post_type='product' AND p.post_status='publish'`;
-
-      if (keyword) query += ` AND p.post_title LIKE '%${keyword}%'`;
-      if (color) query += ` AND pm_color.meta_value LIKE '%${color}%'`;
-      if (size) query += ` AND pm_size.meta_value LIKE '%${size}%'`;
-      query += ` ORDER BY p.ID DESC LIMIT 5`;
-
-      const [rows] = await db.query(query);
-      if (rows.length > 0) {
-        let reply = 'محصولات پیشنهادی بر اساس درخواست شما:\n\n';
-        rows.forEach(p => {
-          reply += `🛍 ${p.post_title}\nرنگ: ${p.color||'-'} | سایز: ${p.size||'-'} | قیمت: ${p.price||'-'} تومان | موجودی: ${p.stock||'-'}\nلینک: ${BASE_URL}/?p=${p.ID}\n\n`;
-        });
-        return reply.trim();
-      } else {
-        return 'متاسفم 😔 محصولی مطابق مشخصات شما پیدا نشد. می‌خوای رنگ یا سایز دیگری امتحان کنیم؟';
-      }
-    } catch (err) {
-      console.error('خطا در جستجوی محصول:', err);
-      return 'خطا در دریافت اطلاعات محصولات. لطفاً بعدا تلاش کنید.';
-    }
+  if (hasSuggestion) {
+    const suggestions = ['پیراهن قرمز شیک', 'شلوار جین آبی', 'کفش ورزشی سفید'];
+    const randomSug = suggestions[Math.floor(Math.random() * suggestions.length)];
+    return `عالی! پیشنهاد من ${randomSug} هست. نظرت چیه؟ 😊 چطور می‌تونم کمک کنم؟`;
   }
-
-  // پاسخ سلام و احوالپرسی
   const greetings = ['سلام', 'درود', 'هی'];
   if (greetings.some(g => message.includes(g))) {
     return 'سلام دوست عزیز! 😄 چطوری؟ در مورد چی حرف بزنیم؟ سفارش داری یا پیشنهاد لباس می‌خوای؟';
   }
-
   session.messages.push({ role: 'ai', content: 'در حال فکر...' });
   return 'جالب بود! 😊 بیشتر بگو، دوست دارم بدونم چی تو ذهنته. یا کد رهگیری بفرست.';
 }
-
-// ==================== TELEGRAM BOT ====================
+// ==================== ربات تلگرام ====================
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
-
-// پذیرش درخواست اپراتور
+// پذیرش درخواست
 bot.action(/accept_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   const info = botSessions.get(short);
@@ -155,14 +80,12 @@ bot.action(/accept_(.+)/, async (ctx) => {
     .join('\n\n') || 'کاربر هنوز پیامی نفرستاده';
   await ctx.reply(`تاریخچه چت:\n\n${history}`);
 });
-
-// رد درخواست اپراتور
+// رد درخواست
 bot.action(/reject_(.+)/, async (ctx) => {
   const short = ctx.match[1];
   botSessions.delete(short);
   await ctx.answerCbQuery('رد شد');
 });
-
 // پیام اپراتور → ویجت
 bot.on('text', async (ctx) => {
   if (ctx.message.text.startsWith('/')) return;
@@ -171,11 +94,9 @@ bot.on('text', async (ctx) => {
   io.to(entry[1].fullId).emit('operator-message', { message: ctx.message.text });
   await ctx.reply('ارسال شد');
 });
-
 // وب‌هوک تلگرام
 app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
-
-// ==================== WEBHOOK ویجت ====================
+// درخواست جدید از ویجت — با صفحه و آی‌پی
 app.post('/webhook', async (req, res) => {
   if (req.body.event !== 'new_session') return res.json({ success: false });
   const { sessionId, userInfo, userMessage } = req.body.data;
@@ -201,8 +122,7 @@ app.post('/webhook', async (req, res) => {
   });
   res.json({ success: true });
 });
-
-// ==================== CONNECT HUMAN API ====================
+// اتصال به اپراتور
 app.post('/api/connect-human', async (req, res) => {
   const { sessionId, userInfo } = req.body;
   getSession(sessionId).userInfo = userInfo || {};
@@ -212,8 +132,7 @@ app.post('/api/connect-human', async (req, res) => {
   }).catch(() => {});
   res.json({ success: true, pending: true });
 });
-
-// ==================== CHAT API ====================
+// ==================== پیگیری سفارش از دیتابیس واقعی ====================
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
 app.post('/api/chat', async (req, res) => {
   const { message, sessionId } = req.body;
@@ -221,12 +140,9 @@ app.post('/api/chat', async (req, res) => {
   const session = getSession(sessionId);
   session.messages.push({ role: 'user', content: message });
   const short = shortId(sessionId);
-
   if (botSessions.get(short)?.chatId) {
     return res.json({ operatorConnected: true });
   }
-
-  // بررسی کد رهگیری سفارش
   const code = message.match(/\d{4,}/)?.[0];
   if (code) {
     try {
@@ -245,29 +161,26 @@ app.post('/api/chat', async (req, res) => {
                       `به‌زودی براتون ارسال می‌شه 😊`;
         return res.json({ success: true, message: reply });
       } else {
-        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد. لطفاً کد رهگیری را دوباره بررسی کنید 🙏` });
+        return res.json({ success: true, message: `سفارش با کد \`${code}\` پیدا نشد.\nلطفاً کد رهگیری رو دوباره چک کنید 🙏` });
       }
     } catch (err) {
-      return res.json({ success: true, message: 'الان نتونستم سفارش رو چک کنم 🙏\nچند لحظه دیگر امتحان کنید' });
+      return res.json({ success: true, message: 'الان نتونستم سفارش رو چک کنم 🙏\nچند لحظه دیگه امتحان کنید' });
     }
   }
-
-  const aiReply = await internalAI(message, session);
+  const aiReply = internalAI(message, session);
   return res.json({ success: true, message: aiReply });
 });
-
-// ==================== SOCKET.IO ====================
+// ==================== سوکت – فایل و ویس ====================
 io.on('connection', (socket) => {
   socket.on('join-session', (sessionId) => socket.join(sessionId));
-
   socket.on('user-message', async ({ sessionId, message }) => {
     if (!sessionId || !message) return;
     const short = shortId(sessionId);
     const info = botSessions.get(short);
     if (info?.chatId) {
       const userName = info.userInfo?.name || 'ناشناس';
-      const userPage = info.userInfo?.page || 'نامشخص';
-      const userIp = info.userInfo?.ip || 'نامشخص';
+      const userPage = info.userInfo?.page ? info.userInfo.page : 'نامشخص';
+      const userIp = info.userInfo?.ip ? info.userInfo.ip : 'نامشخص';
       await bot.telegram.sendMessage(info.chatId, `
 پیام جدید از کاربر
 کد: ${short}
@@ -279,7 +192,7 @@ ${message}
       `.trim());
     }
   });
-
+  // ارسال فایل
   socket.on('user-file', async ({ sessionId, fileName, fileBase64 }) => {
     const short = shortId(sessionId);
     const info = botSessions.get(short);
@@ -288,7 +201,7 @@ ${message}
       await bot.telegram.sendDocument(info.chatId, { source: buffer, filename: fileName });
     }
   });
-
+  // ارسال ویس
   socket.on('user-voice', async ({ sessionId, voiceBase64 }) => {
     const short = shortId(sessionId);
     const info = botSessions.get(short);
@@ -298,11 +211,8 @@ ${message}
     }
   });
 });
-
-// ==================== CATCH-ALL ====================
 app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-// ==================== START SERVER ====================
+// ==================== راه‌اندازی ====================
 server.listen(PORT, '0.0.0.0', async () => {
   console.log(`سرور روی پورت ${PORT} فعال شد`);
   try {
@@ -313,4 +223,4 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.error('وب‌هوک خطا داد → Polling فعال شد');
     bot.launch();
   }
-});
+});  
