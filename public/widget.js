@@ -525,17 +525,30 @@ class ChatWidget {
                 // پاک کردن پیام اولیه
                 this.elements.messagesContainer.innerHTML = '';
                 
-                // بارگذاری تاریخچه
+                // بارگذاری تاریخچه کامل
                 data.history.forEach(item => {
                     let type = 'system';
                     if (item.role === 'user') type = 'user';
                     if (item.role === 'assistant') type = 'assistant';
+                    if (item.role === 'operator') type = 'operator';
                     
                     this.addMessageFromHistory(type, item.content, item.timestamp);
                 });
                 
                 this.state.chatHistoryLoaded = true;
                 console.log(`✅ تاریخچه چت بارگذاری شد (${data.history.length} پیام)`);
+                
+                // اگر اپراتور متصل بود، دکمه‌ها را فعال کن
+                if (data.connectedToHuman) {
+                    this.state.operatorConnected = true;
+                    this.elements.operatorInfo.classList.add('active');
+                    this.elements.voiceBtn.classList.add('active');
+                    this.elements.fileBtn.classList.add('active');
+                    this.elements.recordInstruction.classList.add('active');
+                    this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
+                    this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
+                    this.elements.humanSupportBtn.disabled = true;
+                }
             } else {
                 this.showWelcomeMessage();
             }
@@ -552,11 +565,12 @@ class ChatWidget {
         // پاک کردن پیام‌های موجود
         this.elements.messagesContainer.innerHTML = '';
         
-        // بارگذاری تاریخچه
+        // بارگذاری تاریخچه کامل
         history.forEach(item => {
             let type = 'system';
             if (item.role === 'user') type = 'user';
             if (item.role === 'assistant') type = 'assistant';
+            if (item.role === 'operator') type = 'operator';
             
             this.addMessageFromHistory(type, item.content, item.timestamp);
         });
@@ -709,6 +723,28 @@ class ChatWidget {
         this.resetHumanSupportButton();
     }
 
+    handleOperatorConnected(data) {
+        this.state.operatorConnected = true;
+        this.elements.operatorInfo.classList.add('active');
+        
+        // فعال کردن دکمه‌های ویس و فایل
+        this.elements.voiceBtn.classList.add('active');
+        this.elements.fileBtn.classList.add('active');
+        
+        // نمایش دستورالعمل ضبط
+        this.elements.recordInstruction.classList.add('active');
+        
+        this.addMessage('system', data.message || '🎉 اپراتور متصل شد!');
+        
+        // به‌روزرسانی دکمه اتصال
+        this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
+        this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
+        this.elements.humanSupportBtn.disabled = true;
+        
+        // پیام اضافه برای اطلاع کاربر
+        this.addMessage('system', '🎤 حالا می‌توانید فایل و پیام صوتی نیز ارسال کنید.');
+    }
+
     toggleChat() {
         this.state.isOpen = !this.state.isOpen;
         if (this.state.isOpen) {
@@ -830,28 +866,6 @@ class ChatWidget {
         this.elements.humanSupportBtn.style.background = '#ff6b6b';
         this.elements.humanSupportBtn.disabled = false;
     }
-
-    handleOperatorConnected(data) {
-        this.state.operatorConnected = true;
-        this.elements.operatorInfo.classList.add('active');
-        
-        // فعال کردن دکمه‌های ویس و فایل وقتی اپراتور متصل شد
-        this.elements.voiceBtn.classList.add('active');
-        this.elements.fileBtn.classList.add('active');
-        
-        // نمایش دستورالعمل ضبط
-        this.elements.recordInstruction.classList.add('active');
-        
-        this.addMessage('system', data.message || '🎉 اپراتور متصل شد!');
-        
-        // به‌روزرسانی دکمه اتصال
-        this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
-        this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
-        this.elements.humanSupportBtn.disabled = true;
-        
-        // پیام اضافه برای اطلاع کاربر
-        this.addMessage('system', 'حالا می‌توانید فایل و پیام صوتی نیز ارسال کنید.');
-    }
     
     async startVoiceRecording() {
         // فقط اگر اپراتور متصل است
@@ -871,7 +885,7 @@ class ChatWidget {
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    sampleRate: 16000, // نرخ نمونه‌برداری مناسب
+                    sampleRate: 16000,
                     channelCount: 1
                 }
             });
@@ -882,11 +896,11 @@ class ChatWidget {
             this.state.recordingStartTime = Date.now();
             this.state.recordingTime = 0;
             
-            // فرمت MP3 برای تلگرام - استفاده از audio/mpeg
-            let mimeType = 'audio/mpeg'; // اولویت با MP3
+            // فرمت MP3 برای تلگرام
+            let mimeType = 'audio/mpeg';
             let fileExtension = '.mp3';
             
-            // چک کنیم مرورگر از کدام فرمت پشتیبانی می‌کند
+            // چک فرمت مرورگر
             if (MediaRecorder.isTypeSupported('audio/mpeg')) {
                 mimeType = 'audio/mpeg';
                 fileExtension = '.mp3';
@@ -903,10 +917,10 @@ class ChatWidget {
             
             console.log('Selected audio format for Telegram:', mimeType, 'extension:', fileExtension);
             
-            // ایجاد MediaRecorder با فرمت مناسب
+            // ایجاد MediaRecorder
             const options = { 
                 mimeType: mimeType,
-                audioBitsPerSecond: 64000 // بیت‌ریت کم برای کاهش حجم
+                audioBitsPerSecond: 64000
             };
             
             this.state.mediaRecorder = new MediaRecorder(stream, options);
@@ -924,7 +938,7 @@ class ChatWidget {
             };
             
             // شروع ضبط
-            this.state.mediaRecorder.start(250); // جمع‌آوری داده هر 250ms
+            this.state.mediaRecorder.start(250);
             
             // تغییر ظاهر دکمه
             this.elements.voiceBtn.classList.add('recording');
@@ -1005,7 +1019,7 @@ class ChatWidget {
                 this.elements.recordingTime.textContent = 
                     `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
                 
-                // محدودیت زمانی برای ضبط (3 دقیقه برای تلگرام)
+                // محدودیت زمانی برای ضبط (3 دقیقه)
                 if (this.state.recordingTime >= 180) {
                     this.addMessage('system', '⏰ حداکثر زمان ضبط (۳ دقیقه) به پایان رسید.');
                     this.stopVoiceRecording();
@@ -1035,7 +1049,7 @@ class ChatWidget {
             return;
         }
         
-        // ایجاد فایل صوتی با فرمت مناسب
+        // ایجاد فایل صوتی
         const mimeType = this.state.mediaRecorder?.mimeType || 'audio/mpeg';
         const audioBlob = new Blob(this.state.audioChunks, { type: mimeType });
         const duration = this.state.recordingTime;
@@ -1044,7 +1058,7 @@ class ChatWidget {
         this.addMessage('user', `🎤 پیام صوتی (${duration} ثانیه)`);
         
         try {
-            // بررسی حجم فایل (حداکثر 20MB برای تلگرام)
+            // بررسی حجم فایل
             if (audioBlob.size > 20 * 1024 * 1024) {
                 this.addMessage('system', '❌ پیام صوتی بسیار بزرگ است (بیشتر از 20 مگابایت).');
                 this.state.isRecording = false;
@@ -1053,7 +1067,6 @@ class ChatWidget {
                 return;
             }
             
-            // بررسی حداقل حجم (100 بایت)
             if (audioBlob.size < 100) {
                 this.addMessage('system', '❌ پیام صوتی خیلی کوچک است.');
                 this.state.isRecording = false;
@@ -1065,7 +1078,7 @@ class ChatWidget {
             // تبدیل به base64
             const base64 = await this.blobToBase64(audioBlob);
             
-            // تعیین نام فایل مناسب
+            // تعیین نام فایل
             const timestamp = Date.now();
             const fileName = `voice_${timestamp}${fileExtension}`;
             
@@ -1073,14 +1086,13 @@ class ChatWidget {
             if (this.state.socket && this.state.operatorConnected) {
                 this.state.socket.emit('user-voice', {
                     sessionId: this.state.sessionId,
-                    voiceBase64: base64.split(',')[1], // حذف header data:audio/...
+                    voiceBase64: base64.split(',')[1],
                     duration: duration,
                     fileName: fileName,
                     mimeType: mimeType,
                     fileSize: audioBlob.size,
                     pageUrl: window.location.href,
                     fileExtension: fileExtension,
-                    // اطلاعات اضافی برای تلگرام
                     forTelegram: true,
                     telegramBotToken: this.options.telegramBotToken,
                     telegramChatId: this.options.telegramChatId,
@@ -1144,7 +1156,7 @@ class ChatWidget {
     }
     
     async processFileUpload(file) {
-        // چک کردن حجم فایل (حداکثر 50MB برای تلگرام)
+        // چک کردن حجم فایل
         const MAX_SIZE = 50 * 1024 * 1024;
         if (file.size > MAX_SIZE) {
             this.addMessage('system', `❌ فایل "${file.name}" بسیار بزرگ است (حداکثر 50 مگابایت)`);
@@ -1171,7 +1183,6 @@ class ChatWidget {
                     fileSize: file.size,
                     mimeType: file.type,
                     pageUrl: window.location.href,
-                    // اطلاعات اضافی برای تلگرام
                     forTelegram: true,
                     telegramBotToken: this.options.telegramBotToken,
                     telegramChatId: this.options.telegramChatId,
@@ -1295,14 +1306,13 @@ class ChatWidget {
                 break;
         }
         
-        // فرمت‌بندی متن (تبدیل خطوط جدید و تشخیص لینک)
+        // فرمت‌بندی متن
         let formattedText = this.escapeHtml(text);
         formattedText = formattedText.replace(/\n/g, '<br>');
         
-        // تبدیل لینک‌ها به تگ <a>
+        // تبدیل لینک‌ها
         const urlRegex = /(https?:\/\/[^\s]+)/g;
         formattedText = formattedText.replace(urlRegex, (url) => {
-            // حذف کاراکترهای پایان جمله از انتهای لینک
             const cleanUrl = url.replace(/[.,;!?]$/, '');
             const displayUrl = cleanUrl.length > 50 ? cleanUrl.substring(0, 47) + '...' : cleanUrl;
             return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="chat-link">${displayUrl}</a>${url.slice(cleanUrl.length)}`;
