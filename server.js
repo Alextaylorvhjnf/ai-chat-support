@@ -41,7 +41,10 @@ const getSession = (id) => {
             userInfo: {}, 
             connectedToHuman: false,
             preferences: {},
-            searchHistory: []
+            searchHistory: [],
+            // ذخیره اطلاعات فایل/ویس دریافتی از اپراتور
+            pendingFiles: [],
+            pendingVoices: []
         };
         cache.set(id, s);
     }
@@ -356,7 +359,11 @@ bot.action(/accept_(.+)/, async (ctx) => {
                              `👤 کاربر: ${info.userInfo?.name || 'ناشناس'}\n` +
                              `🌐 صفحه: ${info.userInfo?.page || 'نامشخص'}\n` +
                              `🔢 کد جلسه: ${short}\n\n` +
-                             `📝 **لینک صفحه کاربر:**\n${info.userInfo?.pageUrl || 'نامشخص'}`);
+                             `📝 **لینک صفحه کاربر:**\n${info.userInfo?.pageUrl || 'نامشخص'}\n\n` +
+                             `✨ **اکنون می‌توانید:**\n` +
+                             `• پیام متنی ارسال کنید\n` +
+                             `• فایل ارسال کنید (با آپلود فایل)\n` +
+                             `• پیام صوتی ارسال کنید (با آپلود ویس)`);
     
     io.to(info.fullId).emit('operator-connected', {
         message: '🎉 **اپراتور انسانی متصل شد!**\n\nلطفاً سوال یا درخواست خود را مطرح کنید. 😊'
@@ -369,6 +376,9 @@ bot.action(/reject_(.+)/, async (ctx) => {
     await ctx.answerCbQuery('رد شد');
 });
 
+// ==================== پردازش پیام‌های اپراتور ====================
+
+// پردازش پیام متنی
 bot.on('text', async (ctx) => {
     if (ctx.message.text.startsWith('/')) return;
     
@@ -379,10 +389,136 @@ bot.on('text', async (ctx) => {
     
     io.to(info.fullId).emit('operator-message', { 
         message: ctx.message.text,
-        from: 'اپراتور'
+        from: 'اپراتور',
+        type: 'text'
     });
     
-    await ctx.reply('✅ پیام شما ارسال شد.');
+    await ctx.reply('✅ پیام شما ارسال شد.', {
+        reply_markup: {
+            keyboard: [
+                [{ text: '📁 ارسال فایل' }, { text: '🎤 ارسال ویس' }],
+                [{ text: '🔚 پایان گفتگو' }]
+            ],
+            resize_keyboard: true,
+            one_time_keyboard: false
+        }
+    });
+});
+
+// پردازش فایل‌های ارسالی از اپراتور
+bot.on('document', async (ctx) => {
+    const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
+    if (!entry) return;
+    
+    const [short, info] = entry;
+    const document = ctx.message.document;
+    
+    try {
+        // دریافت فایل از تلگرام
+        const fileLink = await ctx.telegram.getFileLink(document.file_id);
+        const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+        const fileBuffer = Buffer.from(response.data);
+        const fileBase64 = fileBuffer.toString('base64');
+        
+        // ارسال به کاربر از طریق سوکت
+        io.to(info.fullId).emit('operator-file', {
+            fileName: document.file_name || 'فایل',
+            fileBase64: fileBase64,
+            fileSize: document.file_size,
+            mimeType: document.mime_type,
+            from: 'اپراتور'
+        });
+        
+        await ctx.reply(`✅ فایل "${document.file_name || 'فایل'}" ارسال شد.`);
+        
+    } catch (error) {
+        console.error('❌ خطا در ارسال فایل از اپراتور:', error);
+        await ctx.reply('❌ خطا در ارسال فایل. لطفاً دوباره تلاش کنید.');
+    }
+});
+
+// پردازش پیام‌های صوتی از اپراتور
+bot.on('voice', async (ctx) => {
+    const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
+    if (!entry) return;
+    
+    const [short, info] = entry;
+    const voice = ctx.message.voice;
+    
+    try {
+        // دریافت فایل صوتی از تلگرام
+        const fileLink = await ctx.telegram.getFileLink(voice.file_id);
+        const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+        const voiceBuffer = Buffer.from(response.data);
+        const voiceBase64 = voiceBuffer.toString('base64');
+        
+        // ارسال به کاربر از طریق سوکت
+        io.to(info.fullId).emit('operator-voice', {
+            voiceBase64: voiceBase64,
+            duration: voice.duration,
+            from: 'اپراتور'
+        });
+        
+        await ctx.reply(`✅ پیام صوتی ارسال شد (${voice.duration} ثانیه).`);
+        
+    } catch (error) {
+        console.error('❌ خطا در ارسال پیام صوتی از اپراتور:', error);
+        await ctx.reply('❌ خطا در ارسال پیام صوتی. لطفاً دوباره تلاش کنید.');
+    }
+});
+
+// پردازش عکس‌های ارسالی از اپراتور
+bot.on('photo', async (ctx) => {
+    const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
+    if (!entry) return;
+    
+    const [short, info] = entry;
+    const photo = ctx.message.photo[ctx.message.photo.length - 1]; // بزرگترین سایز
+    
+    try {
+        // دریافت عکس از تلگرام
+        const fileLink = await ctx.telegram.getFileLink(photo.file_id);
+        const response = await axios.get(fileLink, { responseType: 'arraybuffer' });
+        const photoBuffer = Buffer.from(response.data);
+        const photoBase64 = photoBuffer.toString('base64');
+        
+        // ارسال به کاربر از طریق سوکت
+        io.to(info.fullId).emit('operator-file', {
+            fileName: 'عکس.jpg',
+            fileBase64: photoBase64,
+            fileSize: photo.file_size,
+            mimeType: 'image/jpeg',
+            from: 'اپراتور',
+            isPhoto: true
+        });
+        
+        await ctx.reply('✅ عکس ارسال شد.');
+        
+    } catch (error) {
+        console.error('❌ خطا در ارسال عکس از اپراتور:', error);
+        await ctx.reply('❌ خطا در ارسال عکس. لطفاً دوباره تلاش کنید.');
+    }
+});
+
+// پردازش command /end برای پایان گفتگو
+bot.command('end', async (ctx) => {
+    const entry = [...botSessions.entries()].find(([_, v]) => v.chatId === ctx.chat.id);
+    if (!entry) return;
+    
+    const [short, info] = entry;
+    
+    // اطلاع به کاربر
+    io.to(info.fullId).emit('operator-ended', {
+        message: '👋 **گفتگو با اپراتور به پایان رسید.**\n\nاگر سوال دیگری دارید، دوباره با من صحبت کنید! 😊'
+    });
+    
+    // پاک کردن سشن
+    botSessions.delete(short);
+    getSession(info.fullId).connectedToHuman = false;
+    
+    await ctx.reply('✅ گفتگو با کاربر به پایان رسید.', {
+        reply_markup: { remove_keyboard: true }
+    });
 });
 
 app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
@@ -395,7 +531,8 @@ app.get('/api/health', (req, res) => {
         status: 'online',
         time: new Date().toLocaleString('fa-IR'),
         api: SHOP_API_URL,
-        sessions: cache.keys().length
+        sessions: cache.keys().length,
+        active_operators: botSessions.size
     });
 });
 
@@ -452,7 +589,6 @@ app.post('/api/chat', async (req, res) => {
             session.userInfo = { 
                 ...session.userInfo, 
                 ...userInfo,
-                // ذخیره URL صفحه
                 pageUrl: userInfo.pageUrl || session.userInfo?.pageUrl || 'نامشخص'
             };
         }
@@ -697,7 +833,6 @@ app.post('/api/connect-human', async (req, res) => {
         session.userInfo = { 
             ...session.userInfo, 
             ...userInfo,
-            // ذخیره URL صفحه
             pageUrl: userInfo.pageUrl || session.userInfo?.pageUrl || 'نامشخص'
         };
     }
@@ -739,7 +874,7 @@ app.post('/api/connect-human', async (req, res) => {
     });
 });
 
-// ==================== سوکت ====================
+// ==================== سوکت برای ارتباط دوطرفه ====================
 io.on('connection', (socket) => {
     console.log('🔌 کاربر جدید متصل شد:', socket.id);
     
@@ -748,6 +883,7 @@ io.on('connection', (socket) => {
         console.log(`📝 کاربر به سشن ${sessionId} پیوست`);
     });
     
+    // دریافت پیام از کاربر برای ارسال به اپراتور
     socket.on('user-message', async ({ sessionId, message }) => {
         if (!sessionId || !message) return;
         
@@ -767,7 +903,7 @@ io.on('connection', (socket) => {
         }
     });
     
-    // ارسال فایل
+    // دریافت فایل از کاربر برای ارسال به اپراتور
     socket.on('user-file', async ({ sessionId, fileName, fileBase64 }) => {
         const short = sessionId.substring(0, 12);
         const info = botSessions.get(short);
@@ -802,7 +938,7 @@ io.on('connection', (socket) => {
         }
     });
     
-    // ارسال ویس
+    // دریافت ویس از کاربر برای ارسال به اپراتور
     socket.on('user-voice', async ({ sessionId, voiceBase64 }) => {
         const short = sessionId.substring(0, 12);
         const info = botSessions.get(short);
@@ -834,6 +970,23 @@ io.on('connection', (socket) => {
             }
         }
     });
+    
+    // پایان گفتگو از طرف کاربر
+    socket.on('end-chat', ({ sessionId }) => {
+        const short = sessionId.substring(0, 12);
+        const info = botSessions.get(short);
+        
+        if (info?.chatId) {
+            bot.telegram.sendMessage(info.chatId, 
+                `👋 **کاربر گفتگو را به پایان رساند.**\n\n` +
+                `🔢 کد جلسه: ${short}\n` +
+                `🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}`
+            );
+            
+            botSessions.delete(short);
+            getSession(sessionId).connectedToHuman = false;
+        }
+    });
 });
 
 // صفحه اصلی
@@ -847,8 +1000,9 @@ app.get('/', (req, res) => {
             'جستجوی هوشمند محصولات با فیلترهای پیشرفته',
             'تشخیص خودکار رنگ، سایز و دسته‌بندی',
             'پیشنهادات هوشمند',
-            'اتصال به اپراتور انسانی',
-            'ارسال فایل و پیام صوتی'
+            'اتصال دوطرفه به اپراتور انسانی',
+            'ارسال فایل و پیام صوتی دوطرفه',
+            'ارسال عکس از اپراتور'
         ],
         api: SHOP_API_URL,
         endpoints: {
@@ -873,6 +1027,7 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.log(`🌐 آدرس: http://localhost:${PORT}`);
     console.log(`🛍️ API سایت: ${SHOP_API_URL}`);
     console.log(`🤖 تلگرام: ${TELEGRAM_BOT_TOKEN ? 'فعال ✅' : 'غیرفعال ❌'}`);
+    console.log(`📁 قابلیت‌ها: متن، فایل، ویس، عکس (دوطرفه)`);
     
     try {
         await bot.telegram.setWebhook(`https://ai-chat-support-production.up.railway.app/telegram-webhook`);
@@ -883,11 +1038,17 @@ server.listen(PORT, '0.0.0.0', async () => {
             `✅ سرور: http://localhost:${PORT}\n` +
             `✅ API: ${SHOP_API_URL}\n` +
             `✅ جستجوی هوشمند: فعال\n` +
-            `✅ فایل/ویس: فعال\n` +
+            `✅ ارتباط دوطرفه: فعال\n` +
+            `✅ ارسال فایل/ویس/عکس: فعال\n` +
             `✅ اطلاعات صفحه کاربر: فعال\n\n` +
             `📅 تاریخ: ${new Date().toLocaleDateString('fa-IR')}\n` +
             `🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}\n\n` +
-            `✨ سیستم آماده خدمات‌رسانی است!`);
+            `✨ سیستم آماده خدمات‌رسانی است!\n\n` +
+            `📌 **راهنمایی برای اپراتورها:**\n` +
+            `• برای ارسال فایل: فایل را آپلود کنید\n` +
+            `• برای ارسال ویس: پیام صوتی ضبط کنید\n` +
+            `• برای ارسال عکس: عکس آپلود کنید\n` +
+            `• برای پایان گفتگو: /end`);
         
     } catch (error) {
         console.log('⚠️ وب‌هوک خطا → Polling فعال شد');
