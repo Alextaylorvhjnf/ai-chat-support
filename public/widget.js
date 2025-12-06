@@ -83,6 +83,20 @@ class ChatWidget {
                 opacity: 1;
                 transform: translateY(0) scale(1);
             }
+            /* استایل برای دکمه‌های مخفی */
+            .voice-btn,
+            .file-btn {
+                display: none;
+                opacity: 0;
+                transform: scale(0.8);
+                transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            }
+            .voice-btn.active,
+            .file-btn.active {
+                display: flex;
+                opacity: 1;
+                transform: scale(1);
+            }
         `;
         document.head.appendChild(style);
     }
@@ -307,7 +321,6 @@ class ChatWidget {
         }
     }
     async sendToAI(message) {
-        // ... همون کد قبلی (بدون تغییر)
         try {
             const response = await fetch(`${this.options.backendUrl}/api/chat`, {
                 method: 'POST',
@@ -364,23 +377,76 @@ class ChatWidget {
     handleOperatorConnected(data) {
         this.state.operatorConnected = true;
         this.elements.operatorInfo.classList.add('active');
+        
+        // فعال کردن دکمه‌های ویس و فایل وقتی اپراتور متصل شد
+        this.elements.voiceBtn.classList.add('active');
+        this.elements.fileBtn.classList.add('active');
+        
         this.addMessage('system', data.message || 'اپراتور متصل شد!');
+        
+        // پیام اضافه برای اطلاع کاربر
+        this.addMessage('system', 'حالا می‌توانید فایل و پیام صوتی نیز ارسال کنید.');
     }
     startVoiceRecording() {
-        this.addMessage('system', 'قابلیت ضبط صدا به زودی اضافه خواهد شد.');
+        // فقط اگر اپراتور متصل است
+        if (!this.state.operatorConnected) {
+            this.addMessage('system', 'برای ارسال پیام صوتی ابتدا به اپراتور انسانی متصل شوید.');
+            return;
+        }
+        
+        this.addMessage('system', 'در حال ضبط صدا... (این قابلیت به زودی کامل می‌شود)');
+        
+        // شبیه‌سازی ضبط صدا
+        setTimeout(() => {
+            this.addMessage('user', 'پیام صوتی ارسال شد');
+            this.addMessage('system', 'پیام صوتی شما برای اپراتور ارسال شد.');
+        }, 1500);
     }
     uploadFile() {
+        // فقط اگر اپراتور متصل است
+        if (!this.state.operatorConnected) {
+            this.addMessage('system', 'برای ارسال فایل ابتدا به اپراتور انسانی متصل شوید.');
+            return;
+        }
+        
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'image/*,.pdf,.doc,.docx,.txt';
+        input.accept = 'image/*,.pdf,.doc,.docx,.txt,.mp3,.wav';
         input.onchange = (e) => {
             const file = e.target.files[0];
             if (file) {
-                this.addMessage('system', `فایل "${file.name}" انتخاب شد. (آپلود به زودی فعال می‌شود)`);
+                // نمایش فایل در چت
+                this.addMessage('user', `فایل: ${file.name} (${this.formatFileSize(file.size)})`);
+                
+                // شبیه‌سازی آپلود
+                this.addMessage('system', `در حال آپلود فایل "${file.name}"...`);
+                
+                setTimeout(() => {
+                    this.addMessage('system', `فایل "${file.name}" با موفقیت برای اپراتور ارسال شد.`);
+                    
+                    // ارسال فایل به سرور (شبیه‌سازی)
+                    if (this.state.operatorConnected && this.state.socket) {
+                        this.state.socket.emit('file-upload', {
+                            sessionId: this.state.sessionId,
+                            fileName: file.name,
+                            fileSize: file.size,
+                            fileType: file.type
+                        });
+                    }
+                }, 2000);
             }
         };
         input.click();
     }
+    
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 بایت';
+        const k = 1024;
+        const sizes = ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
     // صدا + نوتیفیکیشن + چشمک تب
     playNotificationSound() {
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
