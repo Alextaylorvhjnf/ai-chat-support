@@ -354,7 +354,9 @@ bot.action(/accept_(.+)/, async (ctx) => {
     
     await ctx.editMessageText(`🎯 **شما این گفتگو را پذیرفتید**\n\n` +
                              `👤 کاربر: ${info.userInfo?.name || 'ناشناس'}\n` +
-                             `🔢 کد جلسه: ${short}`);
+                             `🌐 صفحه: ${info.userInfo?.page || 'نامشخص'}\n` +
+                             `🔢 کد جلسه: ${short}\n\n` +
+                             `📝 **لینک صفحه کاربر:**\n${info.userInfo?.pageUrl || 'نامشخص'}`);
     
     io.to(info.fullId).emit('operator-connected', {
         message: '🎉 **اپراتور انسانی متصل شد!**\n\nلطفاً سوال یا درخواست خود را مطرح کنید. 😊'
@@ -447,7 +449,12 @@ app.post('/api/chat', async (req, res) => {
         
         const session = getSession(sessionId);
         if (userInfo) {
-            session.userInfo = { ...session.userInfo, ...userInfo };
+            session.userInfo = { 
+                ...session.userInfo, 
+                ...userInfo,
+                // ذخیره URL صفحه
+                pageUrl: userInfo.pageUrl || session.userInfo?.pageUrl || 'نامشخص'
+            };
         }
         
         session.messages.push({ 
@@ -619,13 +626,18 @@ app.post('/api/chat', async (req, res) => {
                 createdAt: new Date()
             });
             
-            // اطلاع به تلگرام
+            // اطلاع به تلگرام - با URL صفحه
             await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, 
                 `🔔 **درخواست اتصال به اپراتور**\n\n` +
-                `👤 نام: ${session.userInfo?.name || 'ناشناس'}\n` +
-                `🔢 کد جلسه: ${short}\n` +
-                `💬 آخرین پیام: ${message.substring(0, 50)}...\n\n` +
-                `🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}`,
+                `👤 **نام:** ${session.userInfo?.name || 'ناشناس'}\n` +
+                `📧 **ایمیل:** ${session.userInfo?.email || 'نامشخص'}\n` +
+                `📱 **موبایل:** ${session.userInfo?.phone || 'نامشخص'}\n` +
+                `🌐 **صفحه:** ${session.userInfo?.page || 'نامشخص'}\n` +
+                `🔗 **لینک صفحه:** ${session.userInfo?.pageUrl || 'نامشخص'}\n` +
+                `🔢 **کد جلسه:** ${short}\n` +
+                `💬 **آخرین پیام:** ${message.substring(0, 100)}...\n\n` +
+                `🕐 **زمان:** ${new Date().toLocaleTimeString('fa-IR')}\n` +
+                `📅 **تاریخ:** ${new Date().toLocaleDateString('fa-IR')}`,
                 {
                     reply_markup: {
                         inline_keyboard: [[
@@ -682,7 +694,12 @@ app.post('/api/connect-human', async (req, res) => {
     const session = getSession(sessionId);
     
     if (userInfo) {
-        session.userInfo = { ...session.userInfo, ...userInfo };
+        session.userInfo = { 
+            ...session.userInfo, 
+            ...userInfo,
+            // ذخیره URL صفحه
+            pageUrl: userInfo.pageUrl || session.userInfo?.pageUrl || 'نامشخص'
+        };
     }
     
     const short = sessionId.substring(0, 12);
@@ -693,12 +710,17 @@ app.post('/api/connect-human', async (req, res) => {
         createdAt: new Date()
     });
     
-    // اطلاع به تلگرام
+    // اطلاع به تلگرام - با URL صفحه
     await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, 
         `🔔 **درخواست اتصال جدید**\n\n` +
-        `👤 کاربر: ${session.userInfo?.name || 'ناشناس'}\n` +
-        `🔢 کد: ${short}\n\n` +
-        `🕐 ${new Date().toLocaleTimeString('fa-IR')}`,
+        `👤 **کاربر:** ${session.userInfo?.name || 'ناشناس'}\n` +
+        `📧 **ایمیل:** ${session.userInfo?.email || 'نامشخص'}\n` +
+        `📱 **موبایل:** ${session.userInfo?.phone || 'نامشخص'}\n` +
+        `🌐 **صفحه:** ${session.userInfo?.page || 'نامشخص'}\n` +
+        `🔗 **لینک صفحه:** ${session.userInfo?.pageUrl || 'نامشخص'}\n` +
+        `🔢 **کد:** ${short}\n\n` +
+        `🕐 **زمان:** ${new Date().toLocaleTimeString('fa-IR')}\n` +
+        `📅 **تاریخ:** ${new Date().toLocaleDateString('fa-IR')}`,
         {
             reply_markup: {
                 inline_keyboard: [[
@@ -735,9 +757,13 @@ io.on('connection', (socket) => {
         if (info?.chatId) {
             await bot.telegram.sendMessage(info.chatId, 
                 `💬 **پیام جدید از کاربر**\n\n` +
-                `👤 کد جلسه: ${short}\n` +
-                `📝 پیام:\n${message}\n\n` +
-                `🕐 ${new Date().toLocaleTimeString('fa-IR')}`);
+                `👤 **کاربر:** ${info.userInfo?.name || 'ناشناس'}\n` +
+                `🌐 **صفحه:** ${info.userInfo?.page || 'نامشخص'}\n` +
+                `🔗 **لینک صفحه:** ${info.userInfo?.pageUrl || 'نامشخص'}\n` +
+                `🔢 **کد جلسه:** ${short}\n` +
+                `📝 **پیام:**\n${message}\n\n` +
+                `🕐 **زمان:** ${new Date().toLocaleTimeString('fa-IR')}\n` +
+                `📅 **تاریخ:** ${new Date().toLocaleDateString('fa-IR')}`);
         }
     });
     
@@ -754,8 +780,11 @@ io.on('connection', (socket) => {
                     filename: fileName
                 }, {
                     caption: `📎 **فایل ارسالی از کاربر**\n\n` +
-                            `🔢 کد جلسه: ${short}\n` +
-                            `📄 نام فایل: ${fileName}`
+                            `👤 **کاربر:** ${info.userInfo?.name || 'ناشناس'}\n` +
+                            `🌐 **صفحه:** ${info.userInfo?.page || 'نامشخص'}\n` +
+                            `🔗 **لینک صفحه:** ${info.userInfo?.pageUrl || 'نامشخص'}\n` +
+                            `🔢 **کد جلسه:** ${short}\n` +
+                            `📄 **نام فایل:** ${fileName}`
                 });
                 
                 socket.emit('file-sent', { 
@@ -785,7 +814,10 @@ io.on('connection', (socket) => {
                     source: buffer
                 }, {
                     caption: `🎤 **پیام صوتی از کاربر**\n\n` +
-                            `🔢 کد جلسه: ${short}`
+                            `👤 **کاربر:** ${info.userInfo?.name || 'ناشناس'}\n` +
+                            `🌐 **صفحه:** ${info.userInfo?.page || 'نامشخص'}\n` +
+                            `🔗 **لینک صفحه:** ${info.userInfo?.pageUrl || 'نامشخص'}\n` +
+                            `🔢 **کد جلسه:** ${short}`
                 });
                 
                 socket.emit('voice-sent', { 
@@ -851,7 +883,8 @@ server.listen(PORT, '0.0.0.0', async () => {
             `✅ سرور: http://localhost:${PORT}\n` +
             `✅ API: ${SHOP_API_URL}\n` +
             `✅ جستجوی هوشمند: فعال\n` +
-            `✅ فایل/ویس: فعال\n\n` +
+            `✅ فایل/ویس: فعال\n` +
+            `✅ اطلاعات صفحه کاربر: فعال\n\n` +
             `📅 تاریخ: ${new Date().toLocaleDateString('fa-IR')}\n` +
             `🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}\n\n` +
             `✨ سیستم آماده خدمات‌رسانی است!`);
