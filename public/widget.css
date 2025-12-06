@@ -32,6 +32,99 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* Welcome Message - Floating Above Button */
+.chat-welcome-message {
+    position: fixed;
+    bottom: 130px;
+    right: 30px;
+    width: 320px;
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+    color: white;
+    padding: 20px;
+    border-radius: 20px;
+    box-shadow: 
+        0 20px 60px rgba(52, 152, 219, 0.4),
+        0 8px 30px rgba(52, 152, 219, 0.3),
+        inset 0 1px 0 rgba(255, 255, 255, 0.2);
+    z-index: 10001;
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    transform: translateY(20px);
+    opacity: 0;
+    transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: slideInUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+@keyframes slideInUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.chat-welcome-message.hidden {
+    display: none;
+}
+
+.chat-welcome-content {
+    font-size: 14.5px;
+    line-height: 1.7;
+    font-weight: 600;
+    text-align: center;
+    padding: 0 10px;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.chat-welcome-message::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    right: 40px;
+    width: 0;
+    height: 0;
+    border-left: 12px solid transparent;
+    border-right: 12px solid transparent;
+    border-top: 12px solid #3498db;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+.welcome-message-close {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.welcome-message-close:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: rotate(90deg) scale(1.1);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+}
+
+.welcome-message-close i {
+    font-size: 12px;
+}
+
 /* Floating Button Container - Bottom Right Fixed */
 .chat-toggle-container {
     position: fixed;
@@ -41,17 +134,15 @@
     transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Floating Button with Logo - Blue Theme */
+/* Floating Button - Full Image Logo */
 .chat-toggle-btn {
     width: 80px;
     height: 80px;
     border-radius: 24px;
-    background: linear-gradient(145deg, #3498db 0%, #2980b9 100%); /* آبی */
+    background: none;
     border: none;
-    color: white;
     cursor: pointer;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
     box-shadow: 
@@ -73,10 +164,15 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: linear-gradient(145deg, #2980b9, #3498db);
+    background: linear-gradient(145deg, rgba(52, 152, 219, 0.9), rgba(41, 128, 185, 0.9));
     opacity: 0;
     transition: opacity 0.5s;
-    z-index: -1;
+    z-index: 1;
+    border-radius: 24px;
+}
+
+.chat-toggle-btn:hover::before {
+    opacity: 0.8;
 }
 
 .chat-toggle-btn:hover {
@@ -88,51 +184,23 @@
         0 0 0 1px rgba(255, 255, 255, 0.15);
 }
 
-.chat-toggle-btn:hover::before {
-    opacity: 1;
+/* Logo as full button background */
+.chat-toggle-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 24px;
+    position: relative;
+    z-index: 0;
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Logo inside the button */
-.chat-logo-container {
-    width: 45px;
-    height: 45px;
-    border-radius: 12px;
-    background: rgba(255, 255, 255, 0.95);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 8px;
-    box-shadow: 
-        0 4px 15px rgba(0, 0, 0, 0.15),
-        inset 0 1px 0 rgba(255, 255, 255, 0.8);
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    overflow: hidden;
-    transition: all 0.3s ease;
-}
-
-.chat-toggle-btn:hover .chat-logo-container {
+.chat-toggle-btn:hover .chat-toggle-logo {
     transform: scale(1.1);
-    box-shadow: 
-        0 6px 20px rgba(0, 0, 0, 0.2),
-        inset 0 1px 0 rgba(255, 255, 255, 0.9);
-}
-
-.chat-logo-container img {
-    width: 70%;
-    height: 70%;
-    object-fit: contain;
-    border-radius: 8px;
 }
 
 .chat-toggle-btn .btn-text {
-    font-size: 11px;
-    font-weight: 800;
-    opacity: 0.95;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    letter-spacing: 0.5px;
-    position: relative;
-    z-index: 1;
-    color: white;
+    display: none;
 }
 
 .notification-badge {
@@ -438,7 +506,7 @@
 
 .message.user {
     align-self: flex-end;
-    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); /* آبی */
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
     color: white;
     border-bottom-right-radius: 10px;
     box-shadow: 
@@ -486,7 +554,7 @@
 
 .message.operator {
     align-self: flex-start;
-    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%); /* آبی */
+    background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
     color: white;
     border-bottom-left-radius: 10px;
     box-shadow: 
@@ -1060,10 +1128,11 @@
         border-radius: 22px;
     }
     
-    .chat-logo-container {
-        width: 40px;
-        height: 40px;
-        border-radius: 10px;
+    .chat-welcome-message {
+        bottom: 110px;
+        right: 20px;
+        width: calc(100vw - 40px);
+        max-width: 320px;
     }
     
     .chat-window {
