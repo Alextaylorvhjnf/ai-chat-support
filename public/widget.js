@@ -46,16 +46,108 @@ class ChatWidget {
         this.injectHTML();
         this.initEvents();
         this.connectWebSocket();
+        this.loadMessages(); // بارگذاری پیام‌های ذخیره شده
         console.log('Chat Widget initialized with session:', this.state.sessionId);
     }
 
     generateSessionId() {
+        // ایجاد شناسه یکتا بر اساس ترکیب IP و اطلاعات مرورگر
         let sessionId = localStorage.getItem('chat_session_id');
         if (!sessionId) {
-            sessionId = 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            // ایجاد شناسه ترکیبی از timestamp، random و user agent
+            sessionId = 'session_' + 
+                       Date.now() + '_' + 
+                       Math.random().toString(36).substr(2, 9) + '_' + 
+                       navigator.userAgent.substring(0, 20).replace(/\s+/g, '_');
             localStorage.setItem('chat_session_id', sessionId);
+            
+            // ذخیره زمان ایجاد سشن
+            localStorage.setItem('chat_session_created', Date.now());
         }
         return sessionId;
+    }
+
+    // ذخیره پیام‌ها در localStorage
+    saveMessages() {
+        try {
+            // فقط 100 پیام آخر را ذخیره می‌کنیم
+            const messagesToSave = this.state.messages.slice(-100);
+            localStorage.setItem(`chat_messages_${this.state.sessionId}`, JSON.stringify(messagesToSave));
+            
+            // همچنین آیدی سشن فعلی را در لیست سشن‌ها ذخیره می‌کنیم
+            const savedSessions = JSON.parse(localStorage.getItem('chat_sessions') || '[]');
+            if (!savedSessions.includes(this.state.sessionId)) {
+                savedSessions.push(this.state.sessionId);
+                localStorage.setItem('chat_sessions', JSON.stringify(savedSessions));
+            }
+        } catch (e) {
+            console.warn('Could not save messages to localStorage:', e);
+        }
+    }
+
+    // بارگذاری پیام‌های ذخیره شده
+    loadMessages() {
+        try {
+            const savedMessages = localStorage.getItem(`chat_messages_${this.state.sessionId}`);
+            if (savedMessages) {
+                this.state.messages = JSON.parse(savedMessages);
+                
+                // نمایش پیام‌های ذخیره شده در چت
+                this.elements.messagesContainer.innerHTML = '';
+                this.state.messages.forEach(msg => {
+                    this.displayMessage(msg.type, msg.text, msg.time, false);
+                });
+                
+                // اسکرول به پایین
+                setTimeout(() => {
+                    this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
+                }, 100);
+                
+                console.log('Loaded', this.state.messages.length, 'messages from storage');
+            } else {
+                // اگر پیام ذخیره‌شده‌ای نیست، پیام خوش‌آمدگویی نمایش بده
+                this.displayMessage('system', 'سلام! من دستیار هوشمند شما هستم. چطور می‌تونم کمکتون کنم؟', 'همین الان', false);
+            }
+        } catch (e) {
+            console.warn('Could not load messages from localStorage:', e);
+        }
+    }
+
+    // پاک کردن تاریخچه چت برای این کاربر
+    clearChatHistory() {
+        try {
+            localStorage.removeItem(`chat_messages_${this.state.sessionId}`);
+            
+            // حذف از لیست سشن‌ها
+            const savedSessions = JSON.parse(localStorage.getItem('chat_sessions') || '[]');
+            const index = savedSessions.indexOf(this.state.sessionId);
+            if (index > -1) {
+                savedSessions.splice(index, 1);
+                localStorage.setItem('chat_sessions', JSON.stringify(savedSessions));
+            }
+            
+            this.state.messages = [];
+            this.elements.messagesContainer.innerHTML = '';
+            
+            // نمایش پیام خالی بودن
+            this.displayMessage('system', 'تاریخچه چت پاک شد.', 'همین الان', false);
+            
+            // ایجاد سشن جدید
+            this.state.sessionId = null;
+            localStorage.removeItem('chat_session_id');
+            this.state.sessionId = this.generateSessionId();
+            
+            // اطلاع به سرور برای پاک کردن تاریخچه
+            if (this.state.socket) {
+                this.state.socket.emit('clear-history', {
+                    sessionId: this.state.sessionId
+                });
+            }
+            
+            console.log('Chat history cleared for session');
+        } catch (e) {
+            console.error('Error clearing chat history:', e);
+        }
     }
 
     injectStyles() {
@@ -190,6 +282,33 @@ class ChatWidget {
                 color: #004499;
                 text-decoration: none;
             }
+            /* دکمه پاک کردن تاریخچه */
+            .clear-history-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                margin-top: 10px;
+                padding: 8px 16px;
+                background: linear-gradient(145deg, #e74c3c, #c0392b);
+                color: white;
+                border: none;
+                border-radius: 8px;
+                font-size: 13px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                width: 100%;
+            }
+            .clear-history-btn:hover {
+                background: linear-gradient(145deg, #c0392b, #a93226);
+                transform: translateY(-2px);
+                box-shadow: 0 4px 12px rgba(231, 76, 60, 0.3);
+            }
+            .clear-history-btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+                transform: none;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -220,12 +339,7 @@ class ChatWidget {
                     </div>
                 </div>
                 <div class="chat-messages">
-                    <div class="message system">
-                        <div class="message-text">
-                            سلام! من دستیار هوشمند شما هستم. چطور می‌تونم کمکتون کنم؟
-                        </div>
-                        <div class="message-time">همین الان</div>
-                    </div>
+                    <!-- پیام‌ها اینجا نمایش داده می‌شوند -->
                 </div>
                 <div class="connection-status">
                     <div class="status-message">
@@ -271,6 +385,10 @@ class ChatWidget {
                         <i class="fas fa-user-headset"></i>
                         اتصال به اپراتور انسانی
                     </button>
+                    <button class="clear-history-btn">
+                        <i class="fas fa-trash-alt"></i>
+                        پاک کردن تاریخچه چت
+                    </button>
                 </div>
             </div>
         `;
@@ -285,6 +403,7 @@ class ChatWidget {
             voiceBtn: this.container.querySelector('.voice-btn'),
             fileBtn: this.container.querySelector('.file-btn'),
             humanSupportBtn: this.container.querySelector('.human-support-btn'),
+            clearHistoryBtn: this.container.querySelector('.clear-history-btn'),
             typingIndicator: this.container.querySelector('.typing-indicator'),
             connectionStatus: this.container.querySelector('.connection-status'),
             operatorInfo: this.container.querySelector('.operator-info'),
@@ -339,6 +458,14 @@ class ChatWidget {
         this.elements.humanSupportBtn.addEventListener('click', (e) => {
             e.stopPropagation();
             this.connectToHuman();
+        });
+        
+        // دکمه پاک کردن تاریخچه
+        this.elements.clearHistoryBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (confirm('آیا مطمئن هستید که می‌خواهید تاریخچه چت پاک شود؟ این عمل قابل بازگشت نیست.')) {
+                this.clearChatHistory();
+            }
         });
         
         // جلوگیری از کلیک روی پنجره چت بسته
@@ -431,7 +558,14 @@ class ChatWidget {
                 console.log('WebSocket connected');
                 this.state.isConnected = true;
                 this.updateConnectionStatus(true);
-                this.state.socket.emit('join-session', this.state.sessionId);
+                this.state.socket.emit('join-session', {
+                    sessionId: this.state.sessionId,
+                    userInfo: {
+                        userAgent: navigator.userAgent,
+                        pageUrl: window.location.href,
+                        language: navigator.language
+                    }
+                });
             });
             
             this.state.socket.on('operator-connected', (data) => {
@@ -450,6 +584,22 @@ class ChatWidget {
             this.state.socket.on('voice-sent', (data) => {
                 console.log('Voice sent confirmation:', data);
                 this.addMessage('system', data.message || 'پیام صوتی با موفقیت ارسال شد.');
+            });
+            
+            this.state.socket.on('history-cleared', (data) => {
+                this.addMessage('system', '✅ تاریخچه چت از سرور نیز پاک شد.');
+            });
+            
+            this.state.socket.on('session-history', (data) => {
+                // اگر سرور تاریخچه‌ای برای این سشن دارد، آن را بارگذاری می‌کنیم
+                if (data.messages && data.messages.length > 0) {
+                    // فقط اگر پیام‌های محلی نداریم یا تعداد پیام‌های سرور بیشتر است
+                    if (this.state.messages.length < data.messages.length) {
+                        this.state.messages = data.messages;
+                        this.saveMessages();
+                        this.loadMessages();
+                    }
+                }
             });
             
             this.state.socket.on('disconnect', () => {
@@ -551,7 +701,11 @@ class ChatWidget {
         this.elements.humanSupportBtn.disabled = true;
         this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> در حال اتصال...`;
         try {
-            const userInfo = { name: 'کاربر سایت', page: location.href };
+            const userInfo = { 
+                name: 'کاربر سایت', 
+                page: location.href,
+                sessionId: this.state.sessionId
+            };
             const res = await fetch(`${this.options.backendUrl}/api/connect-human`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -695,6 +849,7 @@ class ChatWidget {
             this.state.isTyping = true;
             this.elements.messageInput.disabled = true;
             this.elements.humanSupportBtn.disabled = true;
+            this.elements.clearHistoryBtn.disabled = true;
             
         } catch (error) {
             console.error('Error accessing microphone:', error);
@@ -739,6 +894,7 @@ class ChatWidget {
         this.state.isTyping = false;
         this.elements.messageInput.disabled = false;
         this.elements.humanSupportBtn.disabled = false;
+        this.elements.clearHistoryBtn.disabled = false;
     }
     
     stopAudioStream() {
@@ -1020,14 +1176,35 @@ class ChatWidget {
         }
     }
     
+    // تابع اصلی برای اضافه کردن پیام
     addMessage(type, text) {
-        const messageEl = document.createElement('div');
-        messageEl.className = `message ${type}`;
         const time = new Date().toLocaleTimeString('fa-IR', { 
             hour: '2-digit', 
             minute: '2-digit',
             hour12: false
         });
+        
+        // اضافه کردن به آرایه پیام‌ها
+        this.state.messages.push({ type, text, time });
+        
+        // ذخیره در localStorage
+        this.saveMessages();
+        
+        // نمایش پیام در چت
+        this.displayMessage(type, text, time, true);
+        
+        // صدا و نوتیفیکیشن فقط برای پیام‌های غیر از کاربر
+        if (type !== 'user') {
+            this.playNotificationSound();
+            if (!this.state.isOpen) this.showNotification();
+            if (document.hidden) this.startTabNotification();
+        }
+    }
+    
+    // تابع برای نمایش پیام (بدون ذخیره‌سازی)
+    displayMessage(type, text, time, scroll = true) {
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${type}`;
         
         let icon = '', sender = '';
         switch (type) {
@@ -1071,17 +1248,10 @@ class ChatWidget {
         this.elements.messagesContainer.appendChild(messageEl);
         
         // اسکرول به پایین
-        setTimeout(() => {
-            this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
-        }, 100);
-        
-        this.state.messages.push({ type, text, time });
-        
-        // صدا و نوتیفیکیشن فقط برای پیام‌های غیر از کاربر
-        if (type !== 'user') {
-            this.playNotificationSound();
-            if (!this.state.isOpen) this.showNotification();
-            if (document.hidden) this.startTabNotification();
+        if (scroll) {
+            setTimeout(() => {
+                this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
+            }, 100);
         }
     }
     
