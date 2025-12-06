@@ -700,7 +700,7 @@ app.get('/api/test-api', async (req, res) => {
     }
 });
 
-// ==================== سیستم چت اصلی ====================
+// سیستم چت اصلی
 app.post('/api/chat', async (req, res) => {
     try {
         const { message, sessionId, userInfo } = req.body;
@@ -923,7 +923,7 @@ app.post('/api/chat', async (req, res) => {
             const short = sessionId.substring(0, 12);
             botSessions.set(short, {
                 fullId: sessionId,
-                userInfo: session.userInfo,
+                userInfo: session.userInfo || {},
                 chatId: null,
                 createdAt: new Date()
             });
@@ -1272,4 +1272,4 @@ server.listen(PORT, '0.0.0.0', async () => {
         console.log('⚠️ وب‌هوک خطا → Polling فعال شد');
         bot.launch();
     }
-});
+});      
