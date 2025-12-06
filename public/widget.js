@@ -23,7 +23,8 @@ class ChatWidget {
             recordingStartTime: null,
             recordingTimer: null,
             audioStream: null,
-            recordingTime: 0
+            recordingTime: 0,
+            chatHistoryLoaded: false
         };
         // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
@@ -46,6 +47,7 @@ class ChatWidget {
         this.injectHTML();
         this.initEvents();
         this.connectWebSocket();
+        this.loadChatHistory();
         console.log('Chat Widget initialized with session:', this.state.sessionId);
     }
 
@@ -190,6 +192,16 @@ class ChatWidget {
                 color: #004499;
                 text-decoration: none;
             }
+            /* استایل برای پیام‌های سیستمی مدیریت چت */
+            .chat-management-message {
+                background: linear-gradient(145deg, #f8f9fa, #e9ecef) !important;
+                border: 1px solid #dee2e6 !important;
+                border-left: 4px solid #6c757d !important;
+            }
+            .chat-management-message .message-text {
+                color: #495057 !important;
+                font-weight: 500 !important;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -222,7 +234,7 @@ class ChatWidget {
                 <div class="chat-messages">
                     <div class="message system">
                         <div class="message-text">
-                            سلام! من دستیار هوشمند شما هستم. چطور می‌تونم کمکتون کنم؟
+                            در حال بارگذاری تاریخچه چت...
                         </div>
                         <div class="message-time">همین الان</div>
                     </div>
@@ -452,6 +464,27 @@ class ChatWidget {
                 this.addMessage('system', data.message || 'پیام صوتی با موفقیت ارسال شد.');
             });
             
+            // رویدادهای جدید برای مدیریت چت
+            this.state.socket.on('chat-history-loaded', (data) => {
+                this.loadChatHistoryFromServer(data.history);
+            });
+            
+            this.state.socket.on('chat-cleared', (data) => {
+                this.handleChatCleared(data.message);
+            });
+            
+            this.state.socket.on('chat-closed', (data) => {
+                this.handleChatClosed(data.message);
+            });
+            
+            this.state.socket.on('operator-disconnected', (data) => {
+                this.handleOperatorDisconnected(data.message);
+            });
+            
+            this.state.socket.on('ai-message', (data) => {
+                this.addMessage('assistant', data.message);
+            });
+            
             this.state.socket.on('disconnect', () => {
                 console.log('WebSocket disconnected');
                 this.state.isConnected = false;
@@ -478,12 +511,215 @@ class ChatWidget {
         }
     }
 
+    async loadChatHistory() {
+        try {
+            const response = await fetch(`${this.options.backendUrl}/api/chat-history`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ sessionId: this.state.sessionId })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success && data.history && data.history.length > 0) {
+                // پاک کردن پیام اولیه
+                this.elements.messagesContainer.innerHTML = '';
+                
+                // بارگذاری تاریخچه
+                data.history.forEach(item => {
+                    let type = 'system';
+                    if (item.role === 'user') type = 'user';
+                    if (item.role === 'assistant') type = 'assistant';
+                    
+                    this.addMessageFromHistory(type, item.content, item.timestamp);
+                });
+                
+                this.state.chatHistoryLoaded = true;
+                console.log(`✅ تاریخچه چت بارگذاری شد (${data.history.length} پیام)`);
+            } else {
+                this.showWelcomeMessage();
+            }
+            
+        } catch (error) {
+            console.log('⚠️ خطا در بارگذاری تاریخچه، نمایش پیام خوش‌آمدگویی');
+            this.showWelcomeMessage();
+        }
+    }
+
+    loadChatHistoryFromServer(history) {
+        if (this.state.chatHistoryLoaded || !history || history.length === 0) return;
+        
+        // پاک کردن پیام‌های موجود
+        this.elements.messagesContainer.innerHTML = '';
+        
+        // بارگذاری تاریخچه
+        history.forEach(item => {
+            let type = 'system';
+            if (item.role === 'user') type = 'user';
+            if (item.role === 'assistant') type = 'assistant';
+            
+            this.addMessageFromHistory(type, item.content, item.timestamp);
+        });
+        
+        this.state.chatHistoryLoaded = true;
+        console.log(`✅ تاریخچه چت از سرور بارگذاری شد (${history.length} پیام)`);
+    }
+
+    showWelcomeMessage() {
+        this.elements.messagesContainer.innerHTML = '';
+        this.addMessage('system', 
+            'سلام! من دستیار هوشمند شما هستم. چطور می‌تونم کمکتون کنم؟\n\n' +
+            'می‌تونید:\n' +
+            '• کد پیگیری سفارش رو وارد کنید 📦\n' +
+            '• محصول خاصی رو جستجو کنید 🔍\n' +
+            '• از من بخواهید پیشنهاد بدم 🎁\n' +
+            '• یا برای صحبت با "اپراتور" بنویسید 👤'
+        );
+    }
+
+    addMessageFromHistory(type, text, timestamp) {
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${type}`;
+        
+        const time = new Date(timestamp).toLocaleTimeString('fa-IR', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            hour12: false
+        });
+        
+        let icon = '', sender = '';
+        switch (type) {
+            case 'user':
+                icon = '<i class="fas fa-user"></i>';
+                sender = 'شما';
+                break;
+            case 'assistant':
+                icon = '<i class="fas fa-robot"></i>';
+                sender = 'پشتیبان هوشمند';
+                break;
+            case 'operator':
+                icon = '<i class="fas fa-user-tie"></i>';
+                sender = 'اپراتور انسانی';
+                break;
+            case 'system':
+                icon = '<i class="fas fa-info-circle"></i>';
+                sender = 'سیستم';
+                break;
+        }
+        
+        // فرمت‌بندی متن (تبدیل خطوط جدید و تشخیص لینک)
+        let formattedText = this.escapeHtml(text);
+        formattedText = formattedText.replace(/\n/g, '<br>');
+        
+        // تبدیل لینک‌ها به تگ <a>
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        formattedText = formattedText.replace(urlRegex, (url) => {
+            // حذف کاراکترهای پایان جمله از انتهای لینک
+            const cleanUrl = url.replace(/[.,;!?]$/, '');
+            const displayUrl = cleanUrl.length > 50 ? cleanUrl.substring(0, 47) + '...' : cleanUrl;
+            return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="chat-link">${displayUrl}</a>${url.slice(cleanUrl.length)}`;
+        });
+        
+        messageEl.innerHTML = `
+            ${icon ? `<div class="message-sender">${icon}<span>${sender}</span></div>` : ''}
+            <div class="message-text">${formattedText}</div>
+            <div class="message-time">${time}</div>
+        `;
+        
+        this.elements.messagesContainer.appendChild(messageEl);
+        this.state.messages.push({ type, text, time });
+    }
+
+    handleChatCleared(message) {
+        // پاک کردن همه پیام‌ها
+        this.elements.messagesContainer.innerHTML = '';
+        this.state.messages = [];
+        
+        // اضافه کردن پیام سیستم
+        const messageEl = document.createElement('div');
+        messageEl.className = 'message system chat-management-message';
+        messageEl.innerHTML = `
+            <div class="message-sender"><i class="fas fa-trash-alt"></i><span>سیستم</span></div>
+            <div class="message-text">${message}</div>
+            <div class="message-time">${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
+        `;
+        
+        this.elements.messagesContainer.appendChild(messageEl);
+        
+        // ریست کردن وضعیت
+        this.state.operatorConnected = false;
+        this.elements.operatorInfo.classList.remove('active');
+        this.elements.voiceBtn.classList.remove('active');
+        this.elements.fileBtn.classList.remove('active');
+        this.elements.recordInstruction.classList.remove('active');
+        
+        // ریست کردن دکمه اتصال به اپراتور
+        this.resetHumanSupportButton();
+        
+        // صدا و نوتیفیکیشن
+        this.playNotificationSound();
+        this.showNotification();
+    }
+
+    handleChatClosed(message) {
+        // اضافه کردن پیام بستن چت
+        const messageEl = document.createElement('div');
+        messageEl.className = 'message system chat-management-message';
+        messageEl.innerHTML = `
+            <div class="message-sender"><i class="fas fa-door-closed"></i><span>سیستم</span></div>
+            <div class="message-text">${message}</div>
+            <div class="message-time">${new Date().toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit', hour12: false })}</div>
+        `;
+        
+        this.elements.messagesContainer.appendChild(messageEl);
+        this.state.messages.push({ type: 'system', text: message });
+        
+        // ریست کردن وضعیت اتصال
+        this.state.operatorConnected = false;
+        this.elements.operatorInfo.classList.remove('active');
+        this.elements.voiceBtn.classList.remove('active');
+        this.elements.fileBtn.classList.remove('active');
+        this.elements.recordInstruction.classList.remove('active');
+        
+        // ریست کردن دکمه اتصال به اپراتور
+        this.resetHumanSupportButton();
+        
+        // اسکرول به پایین
+        setTimeout(() => {
+            this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
+        }, 100);
+        
+        // صدا و نوتیفیکیشن
+        this.playNotificationSound();
+        this.showNotification();
+    }
+
+    handleOperatorDisconnected(message) {
+        // اضافه کردن پیام
+        this.addMessage('system', message);
+        
+        // ریست کردن وضعیت
+        this.state.operatorConnected = false;
+        this.elements.operatorInfo.classList.remove('active');
+        this.elements.voiceBtn.classList.remove('active');
+        this.elements.fileBtn.classList.remove('active');
+        this.elements.recordInstruction.classList.remove('active');
+        
+        // ریست کردن دکمه اتصال به اپراتور
+        this.resetHumanSupportButton();
+    }
+
     toggleChat() {
         this.state.isOpen = !this.state.isOpen;
         if (this.state.isOpen) {
             this.elements.chatWindow.classList.add('active');
             this.elements.messageInput.focus();
             this.resetNotification();
+            
+            // اگر تاریخچه بارگذاری نشده، بارگذاری کن
+            if (!this.state.chatHistoryLoaded) {
+                this.loadChatHistory();
+            }
         } else {
             this.elements.chatWindow.classList.remove('active');
         }
@@ -503,10 +739,12 @@ class ChatWidget {
     async sendMessage() {
         const message = this.elements.messageInput.value.trim();
         if (!message || this.state.isTyping) return;
+        
         this.addMessage('user', message);
         this.elements.messageInput.value = '';
         this.resizeTextarea();
         this.setTyping(true);
+        
         try {
             if (this.state.operatorConnected) {
                 this.state.socket.emit('user-message', {
@@ -530,7 +768,14 @@ class ChatWidget {
             const response = await fetch(`${this.options.backendUrl}/api/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message, sessionId: this.state.sessionId })
+                body: JSON.stringify({ 
+                    message, 
+                    sessionId: this.state.sessionId,
+                    userInfo: {
+                        name: 'کاربر سایت',
+                        page: location.href
+                    }
+                })
             });
             const data = await response.json();
             if (data.success) {
@@ -551,27 +796,29 @@ class ChatWidget {
         this.elements.humanSupportBtn.disabled = true;
         this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> در حال اتصال...`;
         try {
-            const userInfo = { name: 'کاربر سایت', page: location.href };
+            const userInfo = { 
+                name: 'کاربر سایت', 
+                page: location.href 
+            };
             const res = await fetch(`${this.options.backendUrl}/api/connect-human`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sessionId: this.state.sessionId, userInfo })
+                body: JSON.stringify({ 
+                    sessionId: this.state.sessionId, 
+                    userInfo 
+                })
             });
             const data = await res.json();
             if (data.success) {
-                this.state.operatorConnected = true;
-                this.elements.operatorInfo.classList.add('active');
-                this.addMessage('system', 'در حال اتصال به اپراتور انسانی...');
-                this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
-                this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
+                this.addMessage('system', data.message);
+                this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-clock"></i> در انتظار پذیرش اپراتور`;
+                this.elements.humanSupportBtn.style.background = '#ff9500';
                 this.elements.humanSupportBtn.disabled = true;
-                // نمایش دستورالعمل ضبط
-                this.elements.recordInstruction.classList.add('active');
             } else {
                 this.resetHumanSupportButton();
             }
         } catch (err) {
-            this.addMessage('system', 'خطا در اتصال');
+            this.addMessage('system', 'خطا در اتصال به اپراتور');
             this.resetHumanSupportButton();
         } finally {
             this.state.isConnecting = false;
@@ -596,6 +843,11 @@ class ChatWidget {
         this.elements.recordInstruction.classList.add('active');
         
         this.addMessage('system', data.message || '🎉 اپراتور متصل شد!');
+        
+        // به‌روزرسانی دکمه اتصال
+        this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
+        this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
+        this.elements.humanSupportBtn.disabled = true;
         
         // پیام اضافه برای اطلاع کاربر
         this.addMessage('system', 'حالا می‌توانید فایل و پیام صوتی نیز ارسال کنید.');
@@ -631,12 +883,6 @@ class ChatWidget {
             this.state.recordingTime = 0;
             
             // فرمت MP3 برای تلگرام - استفاده از audio/mpeg
-            // تلگرام فرمت‌های زیر را می‌شناسد:
-            // - audio/mpeg (MP3) - بهترین انتخاب
-            // - audio/mp4 (M4A)
-            // - audio/ogg (OGG - اما تلگرام ممکن است آن را نشناسد)
-            
-            // اولویت‌بندی فرمت‌ها برای تلگرام
             let mimeType = 'audio/mpeg'; // اولویت با MP3
             let fileExtension = '.mp3';
             
@@ -798,7 +1044,7 @@ class ChatWidget {
         this.addMessage('user', `🎤 پیام صوتی (${duration} ثانیه)`);
         
         try {
-            // بررسی حجم فایل (حداکثر 20MB برای تلگرام - در واقع 50MB اما ایمن‌تر 20MB)
+            // بررسی حجم فایل (حداکثر 20MB برای تلگرام)
             if (audioBlob.size > 20 * 1024 * 1024) {
                 this.addMessage('system', '❌ پیام صوتی بسیار بزرگ است (بیشتر از 20 مگابایت).');
                 this.state.isRecording = false;
