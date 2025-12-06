@@ -7,6 +7,7 @@ class ChatWidget {
             position: options.position || 'bottom-right',
             theme: options.theme || 'default',
             logoUrl: options.logoUrl || 'https://shikpooshaan.ir/widjet.logo.png',
+            welcomeMessage: options.welcomeMessage || 'من هوش مصنوعی فروشگاه هستم چطور میتونم کمکتون کنم',
             ...options
         };
         this.state = {
@@ -25,7 +26,8 @@ class ChatWidget {
             recordingTimer: null,
             audioStream: null,
             recordingTime: 0,
-            chatHistoryLoaded: false
+            chatHistoryLoaded: false,
+            welcomeMessageVisible: true
         };
         // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
@@ -211,16 +213,25 @@ class ChatWidget {
         this.container = document.createElement('div');
         this.container.className = 'chat-widget';
         this.container.innerHTML = `
- <div class="chat-toggle-container">
-                <!-- Floating Button with Logo -->
+            <!-- Welcome Message - Floating Above Button -->
+            <div class="chat-welcome-message">
+                <button class="welcome-message-close">
+                    <i class="fas fa-times"></i>
+                </button>
+                <div class="chat-welcome-content">
+                    ${this.options.welcomeMessage}
+                </div>
+            </div>
+            
+            <!-- Container for floating elements -->
+            <div class="chat-toggle-container">
+                <!-- Floating Button - Full Image Logo -->
                 <button class="chat-toggle-btn">
-                    <div class="chat-logo-container">
-                        <img src="${this.options.logoUrl}" alt="لوگو پشتیبانی" onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\'fas fa-comments\' style=\'color: #3498db; font-size: 24px;\'></i>';">
-                    </div>
-                    <span class="btn-text">پشتیبانی</span>
+                    <img src="${this.options.logoUrl}" alt="لوگو پشتیبانی" class="chat-toggle-logo" 
+                         onerror="this.style.display='none'; this.parentElement.innerHTML='<i class=\'fas fa-comments\' style=\'color: white; font-size: 32px; z-index: 2;\'></i><span class=\'btn-text\' style=\'display: block; color: white; font-size: 11px; margin-top: 5px; z-index: 2;\'>پشتیبانی</span>';">
                     <span class="notification-badge" style="display: none">0</span>
                 </button>
-            </div> 
+            </div>
             
             <!-- Chat Window -->
             <div class="chat-window">
@@ -297,8 +308,11 @@ class ChatWidget {
         `;
         document.body.appendChild(this.container);
         this.elements = {
+            welcomeMessage: this.container.querySelector('.chat-welcome-message'),
+            welcomeCloseBtn: this.container.querySelector('.welcome-message-close'),
             toggleContainer: this.container.querySelector('.chat-toggle-container'),
             toggleBtn: this.container.querySelector('.chat-toggle-btn'),
+            toggleLogo: this.container.querySelector('.chat-toggle-logo'),
             chatWindow: this.container.querySelector('.chat-window'),
             closeBtn: this.container.querySelector('.close-btn'),
             messagesContainer: this.container.querySelector('.chat-messages'),
@@ -319,6 +333,12 @@ class ChatWidget {
     }
 
     initEvents() {
+        // رویداد دکمه بستن پیام خوش‌آمدگویی
+        this.elements.welcomeCloseBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.closeWelcomeMessage();
+        });
+        
         // رویداد دکمه باز کردن چت
         this.elements.toggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -402,6 +422,18 @@ class ChatWidget {
                 this.handleVoiceTouchEnd();
             }
         });
+    }
+
+    closeWelcomeMessage() {
+        this.state.welcomeMessageVisible = false;
+        this.elements.welcomeMessage.classList.add('hidden');
+        localStorage.setItem('chat_welcome_closed', 'true');
+    }
+
+    showWelcomeMessage() {
+        this.state.welcomeMessageVisible = true;
+        this.elements.welcomeMessage.classList.remove('hidden');
+        localStorage.setItem('chat_welcome_closed', 'false');
     }
 
     // تابع‌های هندلر برای ضبط صدا
@@ -1380,9 +1412,23 @@ if (!document.querySelector('link[href*="font-awesome"]')) {
 
 // راه‌اندازی خودکار
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => window.ChatWidget = new ChatWidget());
+    document.addEventListener('DOMContentLoaded', () => {
+        // بررسی اینکه آیا کاربر قبلاً پیام خوش‌آمدگویی را بسته است
+        const welcomeClosed = localStorage.getItem('chat_welcome_closed');
+        window.ChatWidget = new ChatWidget();
+        
+        // اگر قبلاً بسته شده، پیام را نمایش نده
+        if (welcomeClosed === 'true') {
+            window.ChatWidget.closeWelcomeMessage();
+        }
+    });
 } else {
+    const welcomeClosed = localStorage.getItem('chat_welcome_closed');
     window.ChatWidget = new ChatWidget();
+    
+    if (welcomeClosed === 'true') {
+        window.ChatWidget.closeWelcomeMessage();
+    }
 }
 
 window.initChatWidget = (options) => new ChatWidget(options);
