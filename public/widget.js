@@ -180,6 +180,16 @@ class ChatWidget {
                 0% { transform: rotate(0deg); }
                 100% { transform: rotate(360deg); }
             }
+            /* استایل برای لینک‌های قابل کلیک */
+            .chat-link {
+                color: #0066cc;
+                text-decoration: underline;
+                word-break: break-all;
+            }
+            .chat-link:hover {
+                color: #004499;
+                text-decoration: none;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -1039,9 +1049,18 @@ class ChatWidget {
                 break;
         }
         
-        // فرمت‌بندی متن (تبدیل خطوط جدید)
+        // فرمت‌بندی متن (تبدیل خطوط جدید و تشخیص لینک)
         let formattedText = this.escapeHtml(text);
         formattedText = formattedText.replace(/\n/g, '<br>');
+        
+        // تبدیل لینک‌ها به تگ <a>
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        formattedText = formattedText.replace(urlRegex, (url) => {
+            // حذف کاراکترهای پایان جمله از انتهای لینک
+            const cleanUrl = url.replace(/[.,;!?]$/, '');
+            const displayUrl = cleanUrl.length > 50 ? cleanUrl.substring(0, 47) + '...' : cleanUrl;
+            return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer" class="chat-link">${displayUrl}</a>${url.slice(cleanUrl.length)}`;
+        });
         
         messageEl.innerHTML = `
             ${icon ? `<div class="message-sender">${icon}<span>${sender}</span></div>` : ''}
