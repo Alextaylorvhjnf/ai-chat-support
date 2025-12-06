@@ -609,7 +609,7 @@ class ChatWidget {
                 audio: {
                     echoCancellation: true,
                     noiseSuppression: true,
-                    sampleRate: 16000, // نرخ نمونه‌برداری کمتر برای کاهش حجم
+                    sampleRate: 16000, // نرخ نمونه‌برداری مناسب
                     channelCount: 1
                 }
             });
@@ -620,12 +620,32 @@ class ChatWidget {
             this.state.recordingStartTime = Date.now();
             this.state.recordingTime = 0;
             
-            // انتخاب فرمت مناسب برای تلگرام (OGG با Opus بهترین سازگاری)
-            const mimeType = MediaRecorder.isTypeSupported('audio/ogg; codecs=opus') 
-                ? 'audio/ogg; codecs=opus' 
-                : MediaRecorder.isTypeSupported('audio/webm; codecs=opus')
-                    ? 'audio/webm; codecs=opus'
-                    : 'audio/webm';
+            // فرمت MP3 برای تلگرام - استفاده از audio/mpeg
+            // تلگرام فرمت‌های زیر را می‌شناسد:
+            // - audio/mpeg (MP3) - بهترین انتخاب
+            // - audio/mp4 (M4A)
+            // - audio/ogg (OGG - اما تلگرام ممکن است آن را نشناسد)
+            
+            // اولویت‌بندی فرمت‌ها برای تلگرام
+            let mimeType = 'audio/mpeg'; // اولویت با MP3
+            let fileExtension = '.mp3';
+            
+            // چک کنیم مرورگر از کدام فرمت پشتیبانی می‌کند
+            if (MediaRecorder.isTypeSupported('audio/mpeg')) {
+                mimeType = 'audio/mpeg';
+                fileExtension = '.mp3';
+            } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+                mimeType = 'audio/mp4';
+                fileExtension = '.m4a';
+            } else if (MediaRecorder.isTypeSupported('audio/webm')) {
+                mimeType = 'audio/webm';
+                fileExtension = '.webm';
+            } else if (MediaRecorder.isTypeSupported('audio/ogg; codecs=opus')) {
+                mimeType = 'audio/ogg; codecs=opus';
+                fileExtension = '.ogg';
+            }
+            
+            console.log('Selected audio format for Telegram:', mimeType, 'extension:', fileExtension);
             
             // ایجاد MediaRecorder با فرمت مناسب
             const options = { 
@@ -644,7 +664,7 @@ class ChatWidget {
             
             // وقتی ضبط تمام شد
             this.state.mediaRecorder.onstop = async () => {
-                await this.finishVoiceRecording();
+                await this.finishVoiceRecording(fileExtension);
             };
             
             // شروع ضبط
@@ -662,10 +682,9 @@ class ChatWidget {
             // غیرفعال کردن سایر دکمه‌ها
             this.elements.fileBtn.disabled = true;
             this.elements.sendBtn.disabled = true;
+            this.state.isTyping = true;
             this.elements.messageInput.disabled = true;
             this.elements.humanSupportBtn.disabled = true;
-            
-            console.log('Recording started with format:', mimeType);
             
         } catch (error) {
             console.error('Error accessing microphone:', error);
@@ -707,11 +726,9 @@ class ChatWidget {
         // فعال کردن سایر دکمه‌ها
         this.elements.fileBtn.disabled = false;
         this.elements.sendBtn.disabled = false;
+        this.state.isTyping = false;
         this.elements.messageInput.disabled = false;
         this.elements.humanSupportBtn.disabled = false;
-        
-        // نمایش پیام در حال پردازش
-        this.addMessage('system', '⏳ در حال پردازش پیام صوتی...');
     }
     
     stopAudioStream() {
@@ -732,9 +749,9 @@ class ChatWidget {
                 this.elements.recordingTime.textContent = 
                     `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
                 
-                // محدودیت زمانی برای ضبط (2 دقیقه)
-                if (this.state.recordingTime >= 120) {
-                    this.addMessage('system', '⏰ حداکثر زمان ضبط (۲ دقیقه) به پایان رسید.');
+                // محدودیت زمانی برای ضبط (3 دقیقه برای تلگرام)
+                if (this.state.recordingTime >= 180) {
+                    this.addMessage('system', '⏰ حداکثر زمان ضبط (۳ دقیقه) به پایان رسید.');
                     this.stopVoiceRecording();
                 }
             }
@@ -748,7 +765,7 @@ class ChatWidget {
         }
     }
     
-    async finishVoiceRecording() {
+    async finishVoiceRecording(fileExtension) {
         if (this.state.audioChunks.length === 0) {
             this.addMessage('system', 'پیام صوتی ضبط نشد.');
             this.state.isRecording = false;
@@ -762,17 +779,27 @@ class ChatWidget {
             return;
         }
         
-        // ایجاد فایل صوتی
-        const audioBlob = new Blob(this.state.audioChunks);
+        // ایجاد فایل صوتی با فرمت مناسب
+        const mimeType = this.state.mediaRecorder?.mimeType || 'audio/mpeg';
+        const audioBlob = new Blob(this.state.audioChunks, { type: mimeType });
         const duration = this.state.recordingTime;
         
         // نمایش پیام در چت
         this.addMessage('user', `🎤 پیام صوتی (${duration} ثانیه)`);
         
         try {
-            // بررسی حجم فایل (حداکثر 10MB برای تلگرام)
-            if (audioBlob.size > 10 * 1024 * 1024) {
-                this.addMessage('system', '❌ پیام صوتی بسیار بزرگ است (بیشتر از 10 مگابایت).');
+            // بررسی حجم فایل (حداکثر 20MB برای تلگرام - در واقع 50MB اما ایمن‌تر 20MB)
+            if (audioBlob.size > 20 * 1024 * 1024) {
+                this.addMessage('system', '❌ پیام صوتی بسیار بزرگ است (بیشتر از 20 مگابایت).');
+                this.state.isRecording = false;
+                this.state.audioChunks = [];
+                this.state.mediaRecorder = null;
+                return;
+            }
+            
+            // بررسی حداقل حجم (100 بایت)
+            if (audioBlob.size < 100) {
+                this.addMessage('system', '❌ پیام صوتی خیلی کوچک است.');
                 this.state.isRecording = false;
                 this.state.audioChunks = [];
                 this.state.mediaRecorder = null;
@@ -782,23 +809,40 @@ class ChatWidget {
             // تبدیل به base64
             const base64 = await this.blobToBase64(audioBlob);
             
+            // تعیین نام فایل مناسب
+            const timestamp = Date.now();
+            const fileName = `voice_${timestamp}${fileExtension}`;
+            
             // ارسال از طریق WebSocket
             if (this.state.socket && this.state.operatorConnected) {
                 this.state.socket.emit('user-voice', {
                     sessionId: this.state.sessionId,
                     voiceBase64: base64.split(',')[1], // حذف header data:audio/...
                     duration: duration,
-                    fileName: `voice_message_${Date.now()}.ogg`,
-                    mimeType: audioBlob.type || 'audio/ogg',
+                    fileName: fileName,
+                    mimeType: mimeType,
                     fileSize: audioBlob.size,
-                    pageUrl: window.location.href
+                    pageUrl: window.location.href,
+                    fileExtension: fileExtension,
+                    // اطلاعات اضافی برای تلگرام
+                    forTelegram: true,
+                    telegramBotToken: this.options.telegramBotToken,
+                    telegramChatId: this.options.telegramChatId,
+                    caption: `🎤 پیام صوتی از کاربر\n⏱ مدت: ${duration} ثانیه\n📁 حجم: ${this.formatFileSize(audioBlob.size)}`
                 });
                 
-                console.log('Voice sent via WebSocket:', {
+                console.log('Voice sent via WebSocket for Telegram:', {
                     duration: duration + 's',
                     size: this.formatFileSize(audioBlob.size),
-                    type: audioBlob.type
+                    type: mimeType,
+                    extension: fileExtension,
+                    name: fileName
                 });
+                
+                // پیام تایید
+                this.addMessage('system', '✅ پیام صوتی برای ارسال به تلگرام آماده شد.');
+            } else {
+                this.addMessage('system', '❌ اتصال به سرور برقرار نیست.');
             }
             
         } catch (error) {
@@ -844,7 +888,7 @@ class ChatWidget {
     }
     
     async processFileUpload(file) {
-        // چک کردن حجم فایل (حداکثر 50MB)
+        // چک کردن حجم فایل (حداکثر 50MB برای تلگرام)
         const MAX_SIZE = 50 * 1024 * 1024;
         if (file.size > MAX_SIZE) {
             this.addMessage('system', `❌ فایل "${file.name}" بسیار بزرگ است (حداکثر 50 مگابایت)`);
@@ -871,14 +915,23 @@ class ChatWidget {
                     fileSize: file.size,
                     mimeType: file.type,
                     pageUrl: window.location.href,
-                    caption: `فایل از کاربر\nسشن: ${this.state.sessionId}\nصفحه: ${window.location.href}`
+                    // اطلاعات اضافی برای تلگرام
+                    forTelegram: true,
+                    telegramBotToken: this.options.telegramBotToken,
+                    telegramChatId: this.options.telegramChatId,
+                    caption: `📎 فایل از کاربر\n📁 نام: ${file.name}\n📊 حجم: ${this.formatFileSize(file.size)}\n📄 نوع: ${file.type || 'ناشناخته'}`
                 });
                 
-                console.log('File sent via WebSocket:', {
+                console.log('File sent via WebSocket for Telegram:', {
                     name: file.name,
                     size: this.formatFileSize(file.size),
                     type: file.type
                 });
+                
+                // پیام تایید
+                this.addMessage('system', '✅ فایل برای ارسال به تلگرام آماده شد.');
+            } else {
+                this.addMessage('system', '❌ اتصال به سرور برقرار نیست.');
             }
             
         } catch (error) {
