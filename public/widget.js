@@ -27,7 +27,8 @@ class ChatWidget {
             audioStream: null,
             recordingTime: 0,
             chatHistoryLoaded: false,
-            welcomeMessageVisible: true
+            welcomeMessageVisible: true,
+            isMobile: window.innerWidth <= 768
         };
         // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
@@ -394,9 +395,9 @@ class ChatWidget {
             }
         });
         
-        // بستن پنجره با کلیک بیرون
+        // بستن پنجره با کلیک بیرون (فقط در دسکتاپ)
         document.addEventListener('click', (e) => {
-            if (this.state.isOpen && 
+            if (!this.state.isMobile && this.state.isOpen && 
                 !this.elements.chatWindow.contains(e.target) && 
                 !this.elements.toggleBtn.contains(e.target)) {
                 this.closeChat();
@@ -421,6 +422,11 @@ class ChatWidget {
             if (this.state.isRecording) {
                 this.handleVoiceTouchEnd();
             }
+        });
+        
+        // رسیپانسیو بودن
+        window.addEventListener('resize', () => {
+            this.state.isMobile = window.innerWidth <= 768;
         });
     }
 
