@@ -12,9 +12,7 @@ require('dotenv').config();
 // ==================== تنظیمات ====================
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const OPERATOR_TELEGRAM_IDS = process.env.OPERATOR_TELEGRAM_IDS 
-    ? process.env.OPERATOR_TELEGRAM_IDS.split(',').map(id => Number(id.trim()))
-    : [Number(process.env.ADMIN_TELEGRAM_ID)];
+const ADMIN_TELEGRAM_ID = Number(process.env.ADMIN_TELEGRAM_ID);
 
 // آدرس API سایت
 const SHOP_API_URL = 'https://shikpooshaan.ir/ai-shop-api.php';
@@ -32,228 +30,13 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ==================== سیستم نوبت‌دهی هوشمند ====================
-const waitingQueue = []; // صف انتظار کاربران
-const activeChats = new Map(); // چت‌های فعال
-const operatorStatus = new Map(); // وضعیت اپراتورها
-const botSessions = new Map(); // سشن‌های تلگرام
+// ==================== کش و تاریخچه ====================
+const cache = new NodeCache({ stdTTL: 3600 * 24 }); // 24 ساعت
+const botSessions = new Map();
 
-// کش برای ذخیره داده‌های سشن
-const cache = new NodeCache({ stdTTL: 3600 * 24 });
-const chatHistory = new Map(); // تاریخچه کامل چت
+// ذخیره تاریخچه کامل چت (کاربر + اپراتور + سیستم)
+const chatHistory = new Map();
 
-// مقداردهی اولیه اپراتورها
-OPERATOR_TELEGRAM_IDS.forEach((operatorId, index) => {
-    operatorStatus.set(operatorId, {
-        id: operatorId,
-        name: `اپراتور ${index + 1}`,
-        isOnline: true,
-        isAvailable: true,
-        activeChats: [],
-        maxChats: 3, // هر اپراتور حداکثر 3 چت همزمان
-        totalAssigned: 0,
-        lastActivity: new Date(),
-        efficiency: 100 // بازدهی
-    });
-});
-
-// ==================== توابع سیستم نوبت ====================
-
-// اضافه کردن کاربر به صف انتظار
-function addToWaitingQueue(sessionId, userInfo, message = '') {
-    const position = waitingQueue.length + 1;
-    const queueItem = {
-        sessionId,
-        userInfo,
-        position,
-        joinedAt: new Date(),
-        lastMessage: message,
-        estimatedWaitTime: position * 2 // زمان تخمینی انتظار بر اساس موقعیت در صف
-    };
-    
-    waitingQueue.push(queueItem);
-    
-    console.log(`👤 کاربر ${sessionId.substring(0, 12)} به صف انتظار اضافه شد. موقعیت: ${position}`);
-    
-    return queueItem;
-}
-
-// حذف از صف انتظار
-function removeFromWaitingQueue(sessionId) {
-    const index = waitingQueue.findIndex(item => item.sessionId === sessionId);
-    if (index !== -1) {
-        waitingQueue.splice(index, 1);
-        
-        // به‌روزرسانی موقعیت بقیه
-        waitingQueue.forEach((item, i) => {
-            item.position = i + 1;
-            item.estimatedWaitTime = item.position * 2;
-        });
-        
-        console.log(`✅ کاربر ${sessionId.substring(0, 12)} از صف انتظار حذف شد`);
-    }
-}
-
-// پیدا کردن اپراتور مناسب
-function findBestOperator() {
-    let bestOperator = null;
-    let bestScore = -1;
-    
-    for (const [operatorId, status] of operatorStatus.entries()) {
-        if (status.isOnline && status.isAvailable && status.activeChats.length < status.maxChats) {
-            // محاسبه امتیاز
-            const loadScore = (status.maxChats - status.activeChats.length) * 30;
-            const efficiencyScore = status.efficiency;
-            const timeScore = Math.max(0, 50 - ((new Date() - status.lastActivity) / 60000));
-            
-            const totalScore = loadScore + efficiencyScore + timeScore;
-            
-            if (totalScore > bestScore) {
-                bestScore = totalScore;
-                bestOperator = operatorId;
-            }
-        }
-    }
-    
-    return bestOperator;
-}
-
-// تخصیص چت به اپراتور
-async function assignChatToOperator(sessionId, userInfo) {
-    const operatorId = findBestOperator();
-    
-    if (!operatorId) {
-        console.log('⏳ هیچ اپراتور آزادی موجود نیست، کاربر در صف انتظار');
-        return null;
-    }
-    
-    const operator = operatorStatus.get(operatorId);
-    const short = sessionId.substring(0, 12);
-    
-    // ایجاد سشن
-    const sessionInfo = {
-        fullId: sessionId,
-        userInfo: userInfo || {},
-        chatId: null,
-        operatorId: operatorId,
-        status: 'assigned',
-        positionInQueue: 0,
-        assignedAt: new Date(),
-        estimatedWaitTime: 0
-    };
-    
-    botSessions.set(short, sessionInfo);
-    
-    // به‌روزرسانی وضعیت اپراتور
-    operator.activeChats.push({
-        sessionCode: short,
-        assignedAt: new Date(),
-        userInfo: userInfo
-    });
-    
-    if (operator.activeChats.length >= operator.maxChats) {
-        operator.isAvailable = false;
-    }
-    
-    operator.lastActivity = new Date();
-    operator.totalAssigned++;
-    
-    // ارسال اطلاع به اپراتور
-    await notifyOperatorAssignment(operatorId, short, userInfo, operator.activeChats.length);
-    
-    console.log(`✅ چت ${short} به ${operator.name} اختصاص یافت`);
-    return operatorId;
-}
-
-// اطلاع به اپراتور درباره اختصاص چت
-async function notifyOperatorAssignment(operatorId, sessionCode, userInfo, currentChats) {
-    const operator = operatorStatus.get(operatorId);
-    
-    return bot.telegram.sendMessage(operatorId,
-        `🎯 **چت جدید به شما اختصاص یافت**\n\n` +
-        `👤 کاربر: ${userInfo?.name || 'ناشناس'}\n` +
-        `📄 صفحه: ${userInfo?.page || 'نامشخص'}\n` +
-        `🔢 کد: ${sessionCode}\n` +
-        `📊 چت‌های فعال شما: ${currentChats}/${operator.maxChats}\n` +
-        `🏆 امتیاز بازدهی: ${operator.efficiency}%\n\n` +
-        `⏰ **دستورات سریع:**\n` +
-        `/accept_${sessionCode} - پذیرش چت\n` +
-        `/reject_${sessionCode} - رد چت\n` +
-        `/busy - مشغول شدم\n` +
-        `/free - آزاد شدم`,
-        {
-            reply_markup: {
-                inline_keyboard: [[
-                    { text: '✅ پذیرش چت', callback_data: `accept_${sessionCode}` },
-                    { text: '❌ رد چت', callback_data: `reject_${sessionCode}` }
-                ]]
-            }
-        }
-    );
-}
-
-// ارسال وضعیت صف به کاربر
-function sendQueueStatusToUser(sessionId, positionInQueue) {
-    let message = '';
-    
-    if (positionInQueue === 0) {
-        message = `🎯 **نوبت شما رسیده!**\n\n` +
-                 `در حال اتصال به اپراتور... ⏳`;
-    } else if (positionInQueue === 1) {
-        message = `⏳ **۱ نفر قبل از شما در صف است**\n\n` +
-                 `لطفاً کمی صبر کنید...\n` +
-                 `زمان تخمینی: ۲ دقیقه`;
-    } else {
-        message = `⏳ **${positionInQueue} نفر قبل از شما در صف هستند**\n\n` +
-                 `موقعیت شما در صف: ${positionInQueue}\n` +
-                 `زمان تخمینی: ${positionInQueue * 2} دقیقه\n\n` +
-                 `🔄 به محض رسیدن نوبت شما، اطلاع داده می‌شود.`;
-    }
-    
-    // ارسال از طریق سوکت
-    io.to(sessionId).emit('queue-status', {
-        position: positionInQueue,
-        estimatedTime: positionInQueue * 2,
-        message: message
-    });
-    
-    return message;
-}
-
-// بررسی و تخصیص چت به نوبت بعدی
-async function processNextInQueue() {
-    if (waitingQueue.length === 0) return;
-    
-    const nextUser = waitingQueue[0];
-    const operatorId = findBestOperator();
-    
-    if (operatorId) {
-        // حذف از صف و تخصیص
-        waitingQueue.shift();
-        const assigned = await assignChatToOperator(nextUser.sessionId, nextUser.userInfo);
-        
-        if (assigned) {
-            // اطلاع به کاربر
-            sendQueueStatusToUser(nextUser.sessionId, 0);
-            
-            // اطلاع به بقیه افراد صف
-            updateAllQueuePositions();
-        }
-    }
-}
-
-// به‌روزرسانی موقعیت همه افراد در صف
-function updateAllQueuePositions() {
-    waitingQueue.forEach((item, index) => {
-        item.position = index + 1;
-        item.estimatedWaitTime = item.position * 2;
-        
-        // ارسال وضعیت به هر کاربر
-        sendQueueStatusToUser(item.sessionId, item.position);
-    });
-}
-
-// ==================== مدیریت سشن و تاریخچه ====================
 const getSession = (id) => {
     let s = cache.get(id);
     if (!s) {
@@ -263,7 +46,6 @@ const getSession = (id) => {
             userInfo: {}, 
             connectedToHuman: false, 
             operatorId: null,
-            queuePosition: 0,
             preferences: {},
             searchHistory: []
         };
@@ -272,7 +54,8 @@ const getSession = (id) => {
     return s;
 };
 
-// ذخیره پیام در تاریخچه
+// ==================== مدیریت تاریخچه چت ====================
+// ذخیره پیام در تاریخچه کامل
 function saveMessageToHistory(sessionId, message) {
     if (!chatHistory.has(sessionId)) {
         chatHistory.set(sessionId, []);
@@ -283,35 +66,34 @@ function saveMessageToHistory(sessionId, message) {
         savedAt: new Date().toISOString()
     });
     
+    // محدود کردن تاریخچه به 200 پیام آخر
     if (chatHistory.get(sessionId).length > 200) {
         chatHistory.set(sessionId, chatHistory.get(sessionId).slice(-200));
     }
 }
 
-// دریافت تاریخچه کامل
+// دریافت تاریخچه کامل چت
 function getFullChatHistory(sessionId) {
     return chatHistory.get(sessionId) || [];
 }
 
-// پاک کردن تاریخچه
+// پاک کردن تاریخچه چت برای کاربر
 function clearChatHistory(sessionId) {
     if (chatHistory.has(sessionId)) {
         chatHistory.delete(sessionId);
     }
-    
+    // همچنین پیام‌های کش شده را پاک کنید
     const session = getSession(sessionId);
     session.messages = [];
     session.connectedToHuman = false;
     session.operatorId = null;
     cache.set(sessionId, session);
     
+    // پاک کردن سشن از botSessions اگر وجود دارد
     const short = sessionId.substring(0, 12);
     if (botSessions.has(short)) {
         botSessions.delete(short);
     }
-    
-    // حذف از صف اگر وجود دارد
-    removeFromWaitingQueue(sessionId);
     
     return true;
 }
@@ -565,9 +347,10 @@ async function smartProductSearch(analysis, session) {
             session.searchHistory.push({
                 ...searchParams,
                 timestamp: new Date(),
-                found: false
+                found: false // موقتاً
             });
             
+            // فقط 10 جستجوی آخر رو نگه دار
             if (session.searchHistory.length > 10) {
                 session.searchHistory = session.searchHistory.slice(-10);
             }
@@ -592,7 +375,7 @@ async function smartProductSearch(analysis, session) {
                 };
             }
             
-            // محصولات پرفروش
+            // محصولات پرفروش رو پیشنهاد بده
             const popularResult = await callShopAPI('get_popular_products', { limit: 4 });
             
             return {
@@ -700,210 +483,47 @@ function generateProductResponse(products, searchParams, hasAlternatives = false
 // ==================== ربات تلگرام ====================
 const bot = new Telegraf(TELEGRAM_BOT_TOKEN);
 
-// دستورات مدیریت برای اپراتورها
-bot.command('status', async (ctx) => {
-    const operatorId = ctx.from.id;
-    const operator = operatorStatus.get(operatorId);
-    
-    if (!operator) {
-        return ctx.reply('❌ شما اپراتور نیستید!');
-    }
-    
-    const now = new Date();
-    const queueLength = waitingQueue.length;
-    const activeOperators = Array.from(operatorStatus.values())
-        .filter(op => op.isOnline).length;
-    
-    const statusMessage = `📊 **وضعیت سیستم پشتیبانی**\n\n` +
-                         `👤 **شما:** ${operator.name}\n` +
-                         `🟢 **وضعیت:** ${operator.isAvailable ? 'آماده ✅' : 'مشغول 🔴'}\n` +
-                         `💬 **چت‌های فعال:** ${operator.activeChats.length}/${operator.maxChats}\n` +
-                         `🎯 **بازدهی:** ${operator.efficiency}%\n` +
-                         `👥 **افراد در صف:** ${queueLength} نفر\n` +
-                         `👨‍💼 **اپراتورهای آنلاین:** ${activeOperators}/${OPERATOR_TELEGRAM_IDS.length}\n` +
-                         `⏰ **زمان:** ${now.toLocaleTimeString('fa-IR')}\n\n` +
-                         `📝 **دستورات:**\n` +
-                         `/busy - مشغول شدم\n` +
-                         `/free - آزاد شدم\n` +
-                         `/chats - چت‌های فعال\n` +
-                         `/queue - وضعیت صف`;
-    
-    await ctx.reply(statusMessage);
-});
-
-bot.command('queue', async (ctx) => {
-    const operatorId = ctx.from.id;
-    if (!operatorStatus.has(operatorId)) {
-        return ctx.reply('❌ شما اپراتور نیستید!');
-    }
-    
-    if (waitingQueue.length === 0) {
-        return ctx.reply('📭 **صف انتظار خالی است**\n\nهیچ کاربری در انتظار اپراتور نیست.');
-    }
-    
-    let queueMessage = `📋 **صف انتظار (${waitingQueue.length} نفر)**\n\n`;
-    
-    waitingQueue.slice(0, 10).forEach((item, index) => {
-        const waitTime = Math.floor((new Date() - item.joinedAt) / 60000);
-        queueMessage += `${index + 1}. **${item.userInfo?.name || 'ناشناس'}**\n`;
-        queueMessage += `   📄 صفحه: ${item.userInfo?.page || 'نامشخص'}\n`;
-        queueMessage += `   ⏰ مدت انتظار: ${waitTime} دقیقه\n`;
-        queueMessage += `   🕐 زمان ورود: ${item.joinedAt.toLocaleTimeString('fa-IR')}\n\n`;
-    });
-    
-    if (waitingQueue.length > 10) {
-        queueMessage += `📝 و ${waitingQueue.length - 10} نفر دیگر...`;
-    }
-    
-    await ctx.reply(queueMessage);
-});
-
+// تعریف دستورهای مدیریت چت در تلگرام
 bot.command('chats', async (ctx) => {
-    const operatorId = ctx.from.id;
-    const operator = operatorStatus.get(operatorId);
-    
-    if (!operator) {
-        return ctx.reply('❌ شما اپراتور نیستید!');
+    if (ctx.from.id !== ADMIN_TELEGRAM_ID) {
+        return ctx.reply('❌ دسترسی غیر مجاز!');
     }
     
-    if (operator.activeChats.length === 0) {
-        return ctx.reply('📭 **هیچ چت فعالی ندارید**');
+    const activeChats = Array.from(botSessions.entries())
+        .filter(([_, info]) => info.chatId)
+        .map(([short, info]) => ({
+            code: short,
+            user: info.userInfo?.name || 'ناشناس',
+            page: info.userInfo?.page || 'نامشخص',
+            createdAt: info.createdAt,
+            messageCount: getFullChatHistory(info.fullId).length
+        }));
+    
+    if (activeChats.length === 0) {
+        return ctx.reply('📭 هیچ چت فعالی وجود ندارد.');
     }
     
-    let chatsMessage = `💬 **چت‌های فعال شما (${operator.activeChats.length})**\n\n`;
+    let message = `📊 **چت‌های فعال (${activeChats.length})**\n\n`;
     
-    operator.activeChats.forEach((chat, index) => {
-        const duration = Math.floor((new Date() - chat.assignedAt) / 60000);
-        const short = chat.sessionCode || 'نامشخص';
-        const info = botSessions.get(short);
-        
-        chatsMessage += `${index + 1}. **${chat.userInfo?.name || 'ناشناس'}**\n`;
-        chatsMessage += `   🔢 کد: ${short}\n`;
-        chatsMessage += `   📄 صفحه: ${chat.userInfo?.page || 'نامشخص'}\n`;
-        chatsMessage += `   ⏰ مدت گفتگو: ${duration} دقیقه\n`;
-        chatsMessage += `   📝 مدیریت: /clear_${short} /close_${short}\n\n`;
+    activeChats.forEach((chat, index) => {
+        const timeAgo = Math.floor((new Date() - new Date(chat.createdAt)) / 60000);
+        message += `${index + 1}. **کد:** ${chat.code}\n`;
+        message += `   👤 کاربر: ${chat.user}\n`;
+        message += `   🌐 صفحه: ${chat.page}\n`;
+        message += `   💬 پیام‌ها: ${chat.messageCount}\n`;
+        message += `   ⏰ زمان: ${timeAgo} دقیقه پیش\n`;
+        message += `   📝 مدیریت: /clear_${chat.code} /close_${chat.code}\n\n`;
     });
     
-    await ctx.reply(chatsMessage);
+    await ctx.reply(message);
 });
 
-bot.command('busy', async (ctx) => {
-    const operatorId = ctx.from.id;
-    const operator = operatorStatus.get(operatorId);
-    
-    if (!operator) {
-        return ctx.reply('❌ شما اپراتور نیستید!');
-    }
-    
-    operator.isAvailable = false;
-    await ctx.reply('🔴 **وضعیت شما به "مشغول" تغییر یافت**\n\nچت جدیدی به شما اختصاص داده نمی‌شود.');
-});
-
-bot.command('free', async (ctx) => {
-    const operatorId = ctx.from.id;
-    const operator = operatorStatus.get(operatorId);
-    
-    if (!operator) {
-        return ctx.reply('❌ شما اپراتور نیستید!');
-    }
-    
-    operator.isAvailable = true;
-    operator.isOnline = true;
-    
-    // بررسی اگر چت‌های فعال کمتر از حداکثر است
-    if (operator.activeChats.length < operator.maxChats) {
-        setTimeout(() => processNextInQueue(), 1000);
-    }
-    
-    await ctx.reply('🟢 **وضعیت شما به "آزاد" تغییر یافت**\n\nآماده دریافت چت جدید هستید.');
-});
-
-// پذیرش درخواست چت
-bot.action(/^accept_(.+)/, async (ctx) => {
-    const sessionCode = ctx.match[1];
-    const info = botSessions.get(sessionCode);
-    
-    if (!info) return ctx.answerCbQuery('منقضی شده');
-    
-    const operatorId = ctx.from.id;
-    const operator = operatorStatus.get(operatorId);
-    
-    if (!operator) return ctx.answerCbQuery('دسترسی غیرمجاز');
-    
-    // به‌روزرسانی وضعیت
-    info.chatId = ctx.chat.id;
-    info.status = 'connected';
-    
-    const session = getSession(info.fullId);
-    session.connectedToHuman = true;
-    session.operatorId = operatorId;
-    cache.set(info.fullId, session);
-    
-    await ctx.answerCbQuery('پذیرفته شد');
-    
-    await ctx.editMessageText(`🎯 **شما این گفتگو را پذیرفتید**\n\n` +
-                             `👤 کاربر: ${info.userInfo?.name || 'ناشناس'}\n` +
-                             `📄 صفحه: ${info.userInfo?.page || 'نامشخص'}\n` +
-                             `🔢 کد جلسه: ${sessionCode}\n` +
-                             `💬 تعداد پیام‌ها: ${getFullChatHistory(info.fullId).length}\n\n` +
-                             `📝 **دستورات مدیریت:**\n` +
-                             `/clear_${sessionCode} - پاک کردن تاریخچه\n` +
-                             `/close_${sessionCode} - بستن چت`);
-    
-    // ارسال پیام اتصال موفق به کاربر
-    const operatorConnectedMessage = `✅ **اپراتور به چت متصل شد**\n\n` +
-                                   `👤 هم‌اکنون می‌توانید سوالات خود را بپرسید.\n` +
-                                   `🎤 همچنین می‌توانید پیام صوتی و فایل ارسال کنید.`;
-    
-    io.to(info.fullId).emit('operator-connected', {
-        message: operatorConnectedMessage
-    });
-    
-    // حذف از صف اگر وجود داشت
-    removeFromWaitingQueue(info.fullId);
-    
-    // ذخیره پیام سیستم
-    const systemMessage = {
-        role: 'system',
-        content: '✅ اپراتور گفتگو را پذیرفت.',
-        from: 'سیستم',
-        timestamp: new Date()
-    };
-    saveMessageToHistory(info.fullId, systemMessage);
-});
-
-bot.action(/^reject_(.+)/, async (ctx) => {
-    const sessionCode = ctx.match[1];
-    const info = botSessions.get(sessionCode);
-    
-    if (!info) return ctx.answerCbQuery('منقضی شده');
-    
-    // آزاد کردن اپراتور
-    const operator = operatorStatus.get(info.operatorId);
-    if (operator) {
-        operator.activeChats = operator.activeChats.filter(chat => chat.sessionCode !== sessionCode);
-        if (operator.activeChats.length < operator.maxChats) {
-            operator.isAvailable = true;
-        }
-    }
-    
-    // برگرداندن کاربر به ابتدای صف
-    if (info.userInfo) {
-        addToWaitingQueue(info.fullId, info.userInfo);
-        sendQueueStatusToUser(info.fullId, 1);
-    }
-    
-    botSessions.delete(sessionCode);
-    
-    await ctx.answerCbQuery('رد شد');
-    await ctx.editMessageText(`❌ **این گفتگو را رد کردید**\n\nکاربر به ابتدای صف انتظار بازگردانده شد.`);
-    
-    // بررسی برای تخصیص به اپراتور دیگر
-    setTimeout(() => processNextInQueue(), 1000);
-});
-
-// دستور پاک کردن تاریخچه
+// دستور پاک کردن تاریخچه چت
 bot.command(/^clear_(.+)/, async (ctx) => {
+    if (ctx.from.id !== ADMIN_TELEGRAM_ID) {
+        return ctx.reply('❌ دسترسی غیر مجاز!');
+    }
+    
     const sessionCode = ctx.match[1];
     const info = botSessions.get(sessionCode);
     
@@ -919,11 +539,18 @@ bot.command(/^clear_(.+)/, async (ctx) => {
         message: '📭 **تاریخچه چت پاک شد**\n\nاپراتور تاریخچه این گفتگو را پاک کرده است.'
     });
     
-    await ctx.reply(`✅ تاریخچه چت ${sessionCode} با موفقیت پاک شد.`);
+    // بستن اتصال اپراتور
+    botSessions.delete(sessionCode);
+    
+    await ctx.reply(`✅ تاریخچه چت ${sessionCode} با موفقیت پاک شد.\nتعداد پیام‌های پاک شده: ${getFullChatHistory(info.fullId).length}`);
 });
 
 // دستور بستن چت
 bot.command(/^close_(.+)/, async (ctx) => {
+    if (ctx.from.id !== ADMIN_TELEGRAM_ID) {
+        return ctx.reply('❌ دسترسی غیر مجاز!');
+    }
+    
     const sessionCode = ctx.match[1];
     const info = botSessions.get(sessionCode);
     
@@ -944,15 +571,51 @@ bot.command(/^close_(.+)/, async (ctx) => {
     session.operatorId = null;
     cache.set(info.fullId, session);
     
-    // آزاد کردن اپراتور
-    if (info.operatorId) {
-        releaseOperatorFromChat(info.operatorId, sessionCode);
-    }
-    
     // پاک کردن از botSessions
     botSessions.delete(sessionCode);
     
     await ctx.reply(`✅ چت ${sessionCode} با موفقیت بسته شد و پیام مناسب برای کاربر ارسال گردید.`);
+});
+
+// پذیرش درخواست چت
+bot.action(/accept_(.+)/, async (ctx) => {
+    const short = ctx.match[1];
+    const info = botSessions.get(short);
+    
+    if (!info) return ctx.answerCbQuery('منقضی شده');
+    
+    botSessions.set(short, { ...info, chatId: ctx.chat.id });
+    
+    const session = getSession(info.fullId);
+    session.connectedToHuman = true;
+    session.operatorId = ctx.chat.id;
+    cache.set(info.fullId, session);
+    
+    await ctx.answerCbQuery('پذیرفته شد');
+    
+    await ctx.editMessageText(`🎯 **شما این گفتگو را پذیرفتید**\n\n` +
+                             `👤 کاربر: ${info.userInfo?.name || 'ناشناس'}\n` +
+                             `📄 صفحه: ${info.userInfo?.page || 'نامشخص'}\n` +
+                             `🔢 کد جلسه: ${short}\n` +
+                             `💬 تعداد پیام‌ها: ${getFullChatHistory(info.fullId).length}\n\n` +
+                             `📝 **دستورات مدیریت:**\n` +
+                             `/clear_${short} - پاک کردن تاریخچه چت\n` +
+                             `/close_${short} - بستن چت`);
+    
+    // ارسال پیام اتصال موفق به کاربر
+    const operatorConnectedMessage = `✅ **اپراتور به چت متصل شد**\n\n` +
+                                   `👤 هم‌اکنون می‌توانید سوالات خود را بپرسید.\n` +
+                                   `🎤 همچنین می‌توانید پیام صوتی و فایل ارسال کنید.`;
+    
+    io.to(info.fullId).emit('operator-connected', {
+        message: operatorConnectedMessage
+    });
+});
+
+bot.action(/reject_(.+)/, async (ctx) => {
+    const short = ctx.match[1];
+    botSessions.delete(short);
+    await ctx.answerCbQuery('رد شد');
 });
 
 bot.on('text', async (ctx) => {
@@ -968,8 +631,7 @@ bot.on('text', async (ctx) => {
         role: 'operator',
         content: ctx.message.text,
         from: 'اپراتور تلگرام',
-        operatorId: ctx.chat.id,
-        timestamp: new Date()
+        operatorId: ctx.chat.id
     };
     
     saveMessageToHistory(info.fullId, operatorMessage);
@@ -986,44 +648,7 @@ app.post('/telegram-webhook', (req, res) => bot.handleUpdate(req.body, res));
 
 // ==================== مسیرهای API ====================
 
-// دریافت وضعیت صف
-app.get('/api/queue-status', (req, res) => {
-    res.json({
-        success: true,
-        queueLength: waitingQueue.length,
-        waitingQueue: waitingQueue.map(item => ({
-            sessionId: item.sessionId.substring(0, 12),
-            position: item.position,
-            waitingTime: Math.floor((new Date() - item.joinedAt) / 60000),
-            userInfo: item.userInfo
-        })),
-        activeOperators: Array.from(operatorStatus.values())
-            .filter(op => op.isOnline).length,
-        totalOperators: OPERATOR_TELEGRAM_IDS.length
-    });
-});
-
-// دریافت وضعیت اپراتورها
-app.get('/api/operators-status', (req, res) => {
-    const operators = Array.from(operatorStatus.values()).map(op => ({
-        id: op.id,
-        name: op.name,
-        isOnline: op.isOnline,
-        isAvailable: op.isAvailable,
-        activeChats: op.activeChats.length,
-        maxChats: op.maxChats,
-        efficiency: op.efficiency,
-        lastActivity: op.lastActivity
-    }));
-    
-    res.json({
-        success: true,
-        operators,
-        totalActiveChats: operators.reduce((sum, op) => sum + op.activeChats, 0)
-    });
-});
-
-// دریافت تاریخچه چت
+// دریافت تاریخچه کامل چت
 app.post('/api/chat-history', (req, res) => {
     const { sessionId } = req.body;
     
@@ -1034,19 +659,14 @@ app.post('/api/chat-history', (req, res) => {
     const history = getFullChatHistory(sessionId);
     const session = getSession(sessionId);
     
-    // بررسی موقعیت در صف
-    const queuePosition = waitingQueue.findIndex(item => item.sessionId === sessionId) + 1;
-    
     res.json({
         success: true,
         sessionId,
         messageCount: history.length,
-        history: history.slice(-100),
+        history: history.slice(-100), // 100 پیام آخر
         userInfo: session.userInfo,
         connectedToHuman: session.connectedToHuman,
-        operatorId: session.operatorId,
-        queuePosition: queuePosition > 0 ? queuePosition : 0,
-        estimatedWaitTime: queuePosition * 2
+        operatorId: session.operatorId
     });
 });
 
@@ -1057,9 +677,8 @@ app.get('/api/health', (req, res) => {
         time: new Date().toLocaleString('fa-IR'),
         api: SHOP_API_URL,
         sessions: cache.keys().length,
-        queueLength: waitingQueue.length,
-        activeChats: Array.from(botSessions.values()).filter(s => s.status === 'connected').length,
-        activeOperators: Array.from(operatorStatus.values()).filter(op => op.isOnline && op.isAvailable).length
+        activeChats: Array.from(botSessions.entries()).filter(([_, info]) => info.chatId).length,
+        totalMessages: Array.from(chatHistory.keys()).reduce((sum, key) => sum + chatHistory.get(key).length, 0)
     });
 });
 
@@ -1108,74 +727,13 @@ app.post('/api/chat', async (req, res) => {
         
         const analysis = analyzeMessage(message);
         
-        // ========== اپراتور ==========
-        if (analysis.type === 'operator' || message.includes('اپراتور')) {
-            const short = sessionId.substring(0, 12);
-            
-            // بررسی اگر قبلاً در صف است
-            const existingInQueue = waitingQueue.find(item => item.sessionId === sessionId);
-            if (existingInQueue) {
-                const position = existingInQueue.position;
-                const reply = `⏳ **شما در حال حاضر در صف انتظار هستید**\n\n` +
-                             `موقعیت شما در صف: **${position}**\n` +
-                             `${position === 1 ? '۱ نفر قبل از شما' : `${position} نفر قبل از شما`}\n` +
-                             `⏱ زمان تخمینی: **${position * 2} دقیقه**\n\n` +
-                             `لطفاً منتظر بمانید...`;
-                
-                const systemMessage = { 
-                    role: 'system', 
-                    content: reply,
-                    from: 'سیستم صف'
-                };
-                session.messages.push(systemMessage);
-                saveMessageToHistory(sessionId, systemMessage);
-                
-                return res.json({ success: true, message: reply });
-            }
-            
-            // سعی کن اپراتور اختصاص بدهی
-            const assignedOperator = await assignChatToOperator(sessionId, session.userInfo);
-            
-            if (assignedOperator) {
-                // موفق شد اپراتور اختصاص دهد
-                const reply = `✅ **درخواست شما دریافت شد**\n\n` +
-                             `در حال اتصال به اپراتور... ⏳\n\n` +
-                             `کد جلسه شما: **${short}**\n` +
-                             `به زودی اپراتور با شما ارتباط برقرار می‌کند.`;
-                
-                const systemMessage = { 
-                    role: 'system', 
-                    content: reply,
-                    from: 'سیستم'
-                };
-                session.messages.push(systemMessage);
-                saveMessageToHistory(sessionId, systemMessage);
-                
-                return res.json({ success: true, message: reply });
-            } else {
-                // اضافه به صف انتظار
-                const queueItem = addToWaitingQueue(sessionId, session.userInfo, message);
-                
-                const reply = `⏳ **شما به صف انتظار اضافه شدید**\n\n` +
-                             `موقعیت شما در صف: **${queueItem.position}**\n` +
-                             `${queueItem.position === 1 ? 'هیچکس قبل از شما نیست' : `${queueItem.position - 1} نفر قبل از شما`}\n` +
-                             `⏱ زمان تخمینی: **${queueItem.estimatedWaitTime} دقیقه**\n\n` +
-                             `کد جلسه شما: **${short}**\n` +
-                             `به محض رسیدن نوبت، به شما اطلاع داده می‌شود.`;
-                
-                const systemMessage = { 
-                    role: 'system', 
-                    content: reply,
-                    from: 'سیستم صف'
-                };
-                session.messages.push(systemMessage);
-                saveMessageToHistory(sessionId, systemMessage);
-                
-                // ارسال وضعیت صف به کاربر
-                sendQueueStatusToUser(sessionId, queueItem.position);
-                
-                return res.json({ success: true, message: reply, queuePosition: queueItem.position });
-            }
+        // ذخیره ترجیحات
+        if (analysis.productType) {
+            session.preferences.lastProductType = analysis.productType;
+            session.preferences.lastSearch = {
+                type: analysis.productType,
+                timestamp: new Date()
+            };
         }
         
         // ========== پیگیری سفارش ==========
@@ -1360,7 +918,53 @@ app.post('/api/chat', async (req, res) => {
             return res.json({ success: true, message: reply });
         }
         
+        // ========== اپراتور ==========
+        if (analysis.type === 'operator') {
+            const short = sessionId.substring(0, 12);
+            botSessions.set(short, {
+                fullId: sessionId,
+                userInfo: session.userInfo || {},
+                chatId: null,
+                createdAt: new Date()
+            });
+            
+            // اطلاع به تلگرام
+            await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, 
+                `🔔 **درخواست اتصال به اپراتور**\n\n` +
+                `👤 نام: ${session.userInfo?.name || 'ناشناس'}\n` +
+                `📄 صفحه: ${session.userInfo?.page || 'نامشخص'}\n` +
+                `🔢 کد جلسه: ${short}\n` +
+                `💬 آخرین پیام: ${message.substring(0, 50)}...\n` +
+                `📊 تعداد پیام‌ها: ${getFullChatHistory(sessionId).length}\n\n` +
+                `🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}`,
+                {
+                    reply_markup: {
+                        inline_keyboard: [[
+                            { text: '✅ پذیرش درخواست', callback_data: `accept_${short}` },
+                            { text: '❌ رد درخواست', callback_data: `reject_${short}` }
+                        ]]
+                    }
+                }
+            );
+            
+            const reply = `✅ **درخواست برای اپراتورها ارسال شد**\n\n` +
+                         `لطفاً چند لحظه منتظر بمانید... ⏳\n\n` +
+                         `کد جلسه شما: **${short}**\n` +
+                         `به محض پذیرش توسط اپراتور، به شما اطلاع داده می‌شود.`;
+            
+            const operatorMessage = { 
+                role: 'system', 
+                content: reply,
+                from: 'سیستم'
+            };
+            session.messages.push(operatorMessage);
+            saveMessageToHistory(sessionId, operatorMessage);
+            
+            return res.json({ success: true, message: reply });
+        }
+        
         // ========== پاسخ پیش‌فرض هوشمند ==========
+        // سعی کن بر اساس تاریخچه، پیشنهاد بدهی
         if (session.searchHistory && session.searchHistory.length > 0) {
             const lastSearch = session.searchHistory[session.searchHistory.length - 1];
             
@@ -1393,7 +997,8 @@ app.post('/api/chat', async (req, res) => {
                           `• جستجوی محصولات با رنگ و سایز 🔍\n` +
                           `• پیشنهاد محصولات ویژه 🎁\n` +
                           `• اتصال به اپراتور انسانی 👤\n\n` +
-                          `**برای اتصال به اپراتور کلمه "اپراتور" را تایپ کنید**`;
+                          `**لطفاً انتخاب کنید:**\n` +
+                          `"کد پیگیری" ، "جستجو" ، "پیشنهاد" یا "اپراتور"`;
         
         const finalMessage = { 
             role: 'assistant', 
@@ -1422,6 +1027,29 @@ app.post('/api/chat', async (req, res) => {
     }
 });
 
+// ==================== API اضافی ====================
+
+// جستجوی دسته‌بندی‌ها
+app.get('/api/categories', async (req, res) => {
+    try {
+        const result = await callShopAPI('get_categories', {});
+        res.json(result);
+    } catch (error) {
+        res.json({ success: false, error: error.message });
+    }
+});
+
+// محصولات پرفروش
+app.get('/api/popular-products', async (req, res) => {
+    try {
+        const limit = req.query.limit || 6;
+        const result = await callShopAPI('get_popular_products', { limit });
+        res.json(result);
+    } catch (error) {
+        res.json({ success: false, error: error.message });
+    }
+});
+
 // اتصال به اپراتور
 app.post('/api/connect-human', async (req, res) => {
     const { sessionId, userInfo } = req.body;
@@ -1432,95 +1060,53 @@ app.post('/api/connect-human', async (req, res) => {
     }
     
     const short = sessionId.substring(0, 12);
+    botSessions.set(short, {
+        fullId: sessionId,
+        userInfo: session.userInfo,
+        chatId: null,
+        createdAt: new Date()
+    });
     
-    // بررسی اگر قبلاً در صف است
-    const existingInQueue = waitingQueue.find(item => item.sessionId === sessionId);
-    if (existingInQueue) {
-        const position = existingInQueue.position;
-        const reply = `⏳ **شما در حال حاضر در صف انتظار هستید**\n\n` +
-                     `موقعیت شما در صف: **${position}**\n` +
-                     `${position === 1 ? 'هیچکس قبل از شما نیست' : `${position - 1} نفر قبل از شما`}\n` +
-                     `⏱ زمان تخمینی: **${position * 2} دقیقه**\n\n` +
-                     `کد جلسه شما: **${short}**\n` +
-                     `لطفاً منتظر بمانید...`;
-        
-        const systemMessage = {
-            role: 'system',
-            content: reply,
-            from: 'سیستم صف',
-            timestamp: new Date()
-        };
-        
-        saveMessageToHistory(sessionId, systemMessage);
-        session.messages.push(systemMessage);
-        
-        return res.json({ 
-            success: true, 
-            message: reply,
-            queuePosition: position,
-            estimatedWaitTime: position * 2,
-            sessionCode: short
-        });
-    }
+    // اطلاع به تلگرام
+    await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, 
+        `🔔 **درخواست اتصال جدید**\n\n` +
+        `👤 کاربر: ${session.userInfo?.name || 'ناشناس'}\n` +
+        `📄 صفحه: ${session.userInfo?.page || 'نامشخص'}\n` +
+        `🔢 کد: ${short}\n` +
+        `📊 تاریخچه: ${getFullChatHistory(sessionId).length} پیام\n\n` +
+        `🕐 ${new Date().toLocaleTimeString('fa-IR')}`,
+        {
+            reply_markup: {
+                inline_keyboard: [[
+                    { text: '✅ پذیرش درخواست', callback_data: `accept_${short}` },
+                    { text: '❌ رد درخواست', callback_data: `reject_${short}` }
+                ]]
+            }
+        }
+    );
     
-    // سعی کن اپراتور اختصاص بدهی
-    const assignedOperator = await assignChatToOperator(sessionId, session.userInfo);
+    const responseMessage = `✅ **درخواست برای اپراتورها ارسال شد**\n\n` +
+                          `لطفاً چند لحظه منتظر بمانید... ⏳\n\n` +
+                          `کد جلسه شما: **${short}**\n` +
+                          `به محض پذیرش توسط اپراتور، به شما اطلاع داده می‌شود.`;
     
-    if (assignedOperator) {
-        const reply = `✅ **درخواست شما دریافت شد**\n\n` +
-                     `در حال اتصال به اپراتور... ⏳\n\n` +
-                     `کد جلسه شما: **${short}**\n` +
-                     `به زودی اپراتور با شما ارتباط برقرار می‌کند.`;
-        
-        const systemMessage = {
-            role: 'system',
-            content: reply,
-            from: 'سیستم',
-            timestamp: new Date()
-        };
-        
-        saveMessageToHistory(sessionId, systemMessage);
-        session.messages.push(systemMessage);
-        
-        return res.json({ 
-            success: true, 
-            message: reply,
-            sessionCode: short,
-            status: 'assigned'
-        });
-    } else {
-        // اضافه به صف انتظار
-        const queueItem = addToWaitingQueue(sessionId, session.userInfo, 'درخواست اتصال به اپراتور');
-        
-        const reply = `⏳ **شما به صف انتظار اضافه شدید**\n\n` +
-                     `موقعیت شما در صف: **${queueItem.position}**\n` +
-                     `${queueItem.position === 1 ? 'هیچکس قبل از شما نیست' : `${queueItem.position - 1} نفر قبل از شما`}\n` +
-                     `⏱ زمان تخمینی: **${queueItem.estimatedWaitTime} دقیقه**\n\n` +
-                     `کد جلسه شما: **${short}**\n` +
-                     `به محض رسیدن نوبت، به شما اطلاع داده می‌شود.`;
-        
-        const systemMessage = {
-            role: 'system',
-            content: reply,
-            from: 'سیستم صف',
-            timestamp: new Date()
-        };
-        
-        saveMessageToHistory(sessionId, systemMessage);
-        session.messages.push(systemMessage);
-        
-        // ارسال وضعیت صف به کاربر
-        sendQueueStatusToUser(sessionId, queueItem.position);
-        
-        return res.json({ 
-            success: true, 
-            message: reply,
-            queuePosition: queueItem.position,
-            estimatedWaitTime: queueItem.estimatedWaitTime,
-            sessionCode: short,
-            status: 'waiting_in_queue'
-        });
-    }
+    // ذخیره پیام سیستم
+    const systemMessage = {
+        role: 'system',
+        content: responseMessage,
+        from: 'سیستم',
+        timestamp: new Date()
+    };
+    
+    saveMessageToHistory(sessionId, systemMessage);
+    session.messages.push(systemMessage);
+    
+    res.json({ 
+        success: true, 
+        pending: true,
+        message: responseMessage,
+        sessionCode: short
+    });
 });
 
 // ==================== سوکت ====================
@@ -1529,20 +1115,14 @@ io.on('connection', (socket) => {
     
     socket.on('join-session', (sessionId) => {
         socket.join(sessionId);
-        console.log(`📝 کاربر به سشن ${sessionId.substring(0, 12)} پیوست`);
+        console.log(`📝 کاربر به سشن ${sessionId} پیوست`);
         
         // ارسال تاریخچه چت قبلی
         const history = getFullChatHistory(sessionId);
         if (history.length > 0) {
             socket.emit('chat-history-loaded', {
-                history: history.slice(-50)
+                history: history.slice(-50) // 50 پیام آخر
             });
-        }
-        
-        // بررسی و ارسال وضعیت صف
-        const queueItem = waitingQueue.find(item => item.sessionId === sessionId);
-        if (queueItem) {
-            sendQueueStatusToUser(sessionId, queueItem.position);
         }
     });
     
@@ -1562,7 +1142,7 @@ io.on('connection', (socket) => {
     });
     
     // ارسال فایل
-    socket.on('user-file', async ({ sessionId, fileName, fileBase64, telegramBotToken, telegramChatId, caption }) => {
+    socket.on('user-file', async ({ sessionId, fileName, fileBase64 }) => {
         const short = sessionId.substring(0, 12);
         const info = botSessions.get(short);
         
@@ -1573,7 +1153,9 @@ io.on('connection', (socket) => {
                     source: buffer,
                     filename: fileName
                 }, {
-                    caption: caption || `📎 **فایل ارسالی از کاربر**\n\n🔢 کد جلسه: ${short}`
+                    caption: `📎 **فایل ارسالی از کاربر**\n\n` +
+                            `🔢 کد جلسه: ${short}\n` +
+                            `📄 نام فایل: ${fileName}`
                 });
                 
                 socket.emit('file-sent', { 
@@ -1592,7 +1174,7 @@ io.on('connection', (socket) => {
     });
     
     // ارسال ویس
-    socket.on('user-voice', async ({ sessionId, voiceBase64, telegramBotToken, telegramChatId, caption }) => {
+    socket.on('user-voice', async ({ sessionId, voiceBase64 }) => {
         const short = sessionId.substring(0, 12);
         const info = botSessions.get(short);
         
@@ -1602,7 +1184,8 @@ io.on('connection', (socket) => {
                 await bot.telegram.sendVoice(info.chatId, {
                     source: buffer
                 }, {
-                    caption: caption || `🎤 **پیام صوتی از کاربر**\n\n🔢 کد جلسه: ${short}`
+                    caption: `🎤 **پیام صوتی از کاربر**\n\n` +
+                            `🔢 کد جلسه: ${short}`
                 });
                 
                 socket.emit('voice-sent', { 
@@ -1621,42 +1204,32 @@ io.on('connection', (socket) => {
     });
 });
 
-// تایمر برای بررسی وضعیت صف هر 30 ثانیه
-setInterval(() => {
-    processNextInQueue();
-}, 30000);
-
 // صفحه اصلی
 app.get('/', (req, res) => {
     res.json({
         name: '✨ شیک‌پوشان - پشتیبانی هوشمند ✨',
-        version: '9.0.0',
+        version: '7.0.0',
         status: 'آنلاین ✅',
         features: [
-            'سیستم نوبت‌دهی هوشمند',
-            'صف انتظار خودکار',
-            'تخصیص هوشمند به اپراتور',
-            'پیگیری وضعیت صف در لحظه',
-            'چندین اپراتور همزمان',
-            'مدیریت پیشرفته از تلگرام',
-            'ذخیره تاریخچه کامل',
-            'بارگذاری خودکار تاریخچه',
-            'جستجوی هوشمند محصولات',
-            'پیگیری سفارش',
-            'ارسال فایل و پیام صوتی'
+            'پیگیری سفارش با کد رهگیری',
+            'جستجوی هوشمند محصولات با فیلترهای پیشرفته',
+            'تشخیص خودکار رنگ، سایز و دسته‌بندی',
+            'پیشنهادات هوشمند بر اساس تاریخچه',
+            'اتصال به اپراتور انسانی',
+            'ارسال فایل و پیام صوتی',
+            'مدیریت چت از تلگرام (پاک کردن/بستن)',
+            'ذخیره تاریخچه کامل چت (کاربر + اپراتور)',
+            'بارگذاری خودکار تاریخچه با رفرش صفحه'
         ],
-        queueStats: {
-            waiting: waitingQueue.length,
-            activeChats: Array.from(botSessions.values()).filter(s => s.status === 'connected').length,
-            onlineOperators: Array.from(operatorStatus.values()).filter(op => op.isOnline).length
-        },
+        api: SHOP_API_URL,
         endpoints: {
             chat: 'POST /api/chat',
-            connect: 'POST /api/connect-human',
             history: 'POST /api/chat-history',
-            queue: 'GET /api/queue-status',
-            operators: 'GET /api/operators-status',
-            health: 'GET /api/health'
+            connect: 'POST /api/connect-human',
+            categories: 'GET /api/categories',
+            popular: 'GET /api/popular-products',
+            health: 'GET /api/health',
+            test: 'GET /api/test-api'
         },
         message: 'خوش آمدید به سیستم پشتیبانی هوشمند شیک‌پوشان! 🌸'
     });
@@ -1672,57 +1245,31 @@ server.listen(PORT, '0.0.0.0', async () => {
     console.log(`🌐 آدرس: https://ai-chat-support-production.up.railway.app`);
     console.log(`🛍️ API سایت: ${SHOP_API_URL}`);
     console.log(`🤖 تلگرام: ${TELEGRAM_BOT_TOKEN ? 'فعال ✅' : 'غیرفعال ❌'}`);
-    console.log(`👨‍💼 اپراتورها: ${OPERATOR_TELEGRAM_IDS.length} نفر`);
-    console.log(`📊 سیستم نوبت‌دهی: فعال ✅`);
-    console.log(`⏳ صف انتظار: فعال ✅`);
-    console.log(`💾 ذخیره تاریخچه: فعال ✅`);
+    console.log(`📊 سیستم مدیریت چت: فعال ✅`);
+    console.log(`💾 ذخیره تاریخچه کامل: فعال ✅`);
+    console.log(`🔄 بارگذاری خودکار تاریخچه: فعال ✅`);
     
     try {
         await bot.telegram.setWebhook(`https://ai-chat-support-production.up.railway.app/telegram-webhook`);
         console.log('✅ وب‌هوک تلگرام تنظیم شد');
         
-        // اطلاع به همه اپراتورها
-        OPERATOR_TELEGRAM_IDS.forEach(async (operatorId) => {
-            try {
-                await bot.telegram.sendMessage(operatorId,
-                    `🤖 **سیستم پشتیبانی هوشمند فعال شد** ✨\n\n` +
-                    `✅ سرور: https://ai-chat-support-production.up.railway.app\n` +
-                    `✅ سیستم نوبت‌دهی: فعال\n` +
-                    `✅ صف انتظار: فعال\n` +
-                    `✅ اپراتورهای آنلاین: ${OPERATOR_TELEGRAM_IDS.length} نفر\n\n` +
-                    `📝 **دستورات اصلی:**\n` +
-                    `/status - وضعیت شما\n` +
-                    `/queue - مشاهده صف\n` +
-                    `/chats - چت‌های فعال\n` +
-                    `/busy - مشغول شدم\n` +
-                    `/free - آزاد شدم\n\n` +
-                    `📅 تاریخ: ${new Date().toLocaleDateString('fa-IR')}\n` +
-                    `🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}\n\n` +
-                    `✨ سیستم آماده خدمات‌رسانی است!`
-                );
-            } catch (error) {
-                console.log(`⚠️ خطا در اطلاع به اپراتور ${operatorId}:`, error.message);
-            }
-        });
+        await bot.telegram.sendMessage(ADMIN_TELEGRAM_ID, 
+            `🤖 **سیستم پشتیبانی هوشمند فعال شد** ✨\n\n` +
+            `✅ سرور: https://ai-chat-support-production.up.railway.app\n` +
+            `✅ API: ${SHOP_API_URL}\n` +
+            `✅ جستجوی هوشمند: فعال\n` +
+            `✅ مدیریت چت: فعال\n` +
+            `✅ ذخیره تاریخچه کامل: فعال\n\n` +
+            `📝 **دستورات مدیریت:**\n` +
+            `/chats - مشاهده چت‌های فعال\n` +
+            `/clear_[کد] - پاک کردن تاریخچه\n` +
+            `/close_[کد] - بستن چت\n\n` +
+            `📅 تاریخ: ${new Date().toLocaleDateString('fa-IR')}\n` +
+            `🕐 زمان: ${new Date().toLocaleTimeString('fa-IR')}\n\n` +
+            `✨ سیستم آماده خدمات‌رسانی است!`);
         
     } catch (error) {
         console.log('⚠️ وب‌هوک خطا → Polling فعال شد');
         bot.launch();
     }
 });
-
-// تابع آزاد کردن اپراتور
-function releaseOperatorFromChat(operatorId, sessionCode) {
-    const operator = operatorStatus.get(operatorId);
-    if (!operator) return;
-    
-    operator.activeChats = operator.activeChats.filter(chat => chat.sessionCode !== sessionCode);
-    
-    if (operator.activeChats.length === 0) {
-        operator.isAvailable = true;
-    } else if (operator.activeChats.length < operator.maxChats) {
-        operator.isAvailable = true;
-    }
-    
-    console.log(`✅ اپراتور ${operatorId} از چت ${sessionCode} آزاد شد`);
-}
