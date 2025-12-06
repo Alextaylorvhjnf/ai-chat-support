@@ -493,8 +493,8 @@ class ChatWidget {
                     width: 40px;
                     height: 40px;
                     border-radius: 50%;
-                    background: #1976d2;
-                    color: white;
+                    background:#1976d2;
+                    color: blue;
                     display: flex;
                     align-items: center;
                     justify-content: center;
