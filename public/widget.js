@@ -21,14 +21,24 @@ class ChatWidget {
             mediaRecorder: null,
             audioChunks: [],
             recordingStartTime: null,
-            recordingTimer: null
+            recordingTimer: null,
+            audioStream: null // اضافه شده برای مدیریت استریم
         };
         // برای چشمک زدن تب و صدا
         this.tabNotificationInterval = null;
         this.originalTitle = document.title;
         this.tabNotifyText = 'پیام جدید از پشتیبانی';
+        
+        // بایندرها برای مدیریت رویدادها
+        this.handleVoiceMouseDown = this.handleVoiceMouseDown.bind(this);
+        this.handleVoiceMouseUp = this.handleVoiceMouseUp.bind(this);
+        this.handleVoiceTouchStart = this.handleVoiceTouchStart.bind(this);
+        this.handleVoiceTouchEnd = this.handleVoiceTouchEnd.bind(this);
+        this.handleVoiceMouseLeave = this.handleVoiceMouseLeave.bind(this);
+        
         this.init();
     }
+
     init() {
         this.state.sessionId = this.generateSessionId();
         this.injectStyles();
@@ -37,6 +47,7 @@ class ChatWidget {
         this.connectWebSocket();
         console.log('Chat Widget initialized with session:', this.state.sessionId);
     }
+
     generateSessionId() {
         let sessionId = localStorage.getItem('chat_session_id');
         if (!sessionId) {
@@ -45,6 +56,7 @@ class ChatWidget {
         }
         return sessionId;
     }
+
     injectStyles() {
         if (!document.querySelector('link[href*="widget.css"]')) {
             const link = document.createElement('link');
@@ -139,9 +151,30 @@ class ChatWidget {
             .recording-time {
                 font-family: monospace;
             }
+            /* استایل برای حالت غیرفعال */
+            .voice-btn:disabled,
+            .file-btn:disabled {
+                opacity: 0.5;
+                cursor: not-allowed;
+            }
+            /* دستورالعمل ضبط */
+            .record-instruction {
+                display: none;
+                text-align: center;
+                font-size: 12px;
+                color: #666;
+                margin-top: 5px;
+                padding: 5px;
+                background: #f0f0f0;
+                border-radius: 8px;
+            }
+            .record-instruction.active {
+                display: block;
+            }
         `;
         document.head.appendChild(style);
     }
+
     injectHTML() {
         this.container = document.createElement('div');
         this.container.className = 'chat-widget';
@@ -197,14 +230,21 @@ class ChatWidget {
                     </div>
                 </div>
                 <div class="chat-input-area">
+                    <div class="record-instruction">
+                        برای ضبط صدا، دکمه میکروفون را نگه دارید و رها کنید تا ارسال شود
+                    </div>
                     <div class="recording-indicator">
                         <div class="recording-dot"></div>
                         <span>در حال ضبط...</span>
                         <span class="recording-time">00:00</span>
                     </div>
                     <div class="input-wrapper">
-                        <button class="voice-btn"><i class="fas fa-microphone"></i></button>
-                        <button class="file-btn"><i class="fas fa-paperclip"></i></button>
+                        <button class="voice-btn" title="ضبط صوت (نگه دارید)">
+                            <i class="fas fa-microphone"></i>
+                        </button>
+                        <button class="file-btn" title="ارسال فایل">
+                            <i class="fas fa-paperclip"></i>
+                        </button>
                         <textarea class="message-input" placeholder="پیام خود را بنویسید..." rows="1"></textarea>
                         <button class="send-btn"><i class="fas fa-paper-plane"></i></button>
                     </div>
@@ -232,9 +272,11 @@ class ChatWidget {
             notificationBadge: this.container.querySelector('.notification-badge'),
             chatStatus: this.container.querySelector('.chat-status'),
             recordingIndicator: this.container.querySelector('.recording-indicator'),
-            recordingTime: this.container.querySelector('.recording-time')
+            recordingTime: this.container.querySelector('.recording-time'),
+            recordInstruction: this.container.querySelector('.record-instruction')
         };
     }
+
     initEvents() {
         this.elements.toggleBtn.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -250,33 +292,17 @@ class ChatWidget {
         });
         
         // رویدادهای دکمه ویس
-        this.elements.voiceBtn.addEventListener('mousedown', (e) => {
-            e.stopPropagation();
-            this.startVoiceRecording();
-        });
+        this.elements.voiceBtn.addEventListener('mousedown', this.handleVoiceMouseDown);
+        this.elements.voiceBtn.addEventListener('mouseup', this.handleVoiceMouseUp);
+        this.elements.voiceBtn.addEventListener('mouseleave', this.handleVoiceMouseLeave);
+        this.elements.voiceBtn.addEventListener('touchstart', this.handleVoiceTouchStart);
+        this.elements.voiceBtn.addEventListener('touchend', this.handleVoiceTouchEnd);
+        this.elements.voiceBtn.addEventListener('touchcancel', this.handleVoiceTouchEnd);
         
-        this.elements.voiceBtn.addEventListener('mouseup', (e) => {
-            e.stopPropagation();
-            this.stopVoiceRecording();
-        });
-        
-        this.elements.voiceBtn.addEventListener('mouseleave', (e) => {
-            if (this.state.isRecording) {
-                this.stopVoiceRecording();
-            }
-        });
-        
-        // رویدادهای لمسی برای موبایل
-        this.elements.voiceBtn.addEventListener('touchstart', (e) => {
-            e.stopPropagation();
+        // برای جلوگیری از کلیک راست روی دکمه ویس
+        this.elements.voiceBtn.addEventListener('contextmenu', (e) => {
             e.preventDefault();
-            this.startVoiceRecording();
-        });
-        
-        this.elements.voiceBtn.addEventListener('touchend', (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            this.stopVoiceRecording();
+            return false;
         });
         
         this.elements.fileBtn.addEventListener('click', (e) => {
@@ -318,7 +344,60 @@ class ChatWidget {
                 e.stopPropagation();
             }
         });
+        
+        // اضافه کردن event listener برای release در سطح document
+        document.addEventListener('mouseup', (e) => {
+            if (this.state.isRecording && e.button === 0) {
+                this.handleVoiceMouseUp();
+            }
+        });
+        
+        document.addEventListener('touchend', (e) => {
+            if (this.state.isRecording) {
+                this.handleVoiceTouchEnd();
+            }
+        });
     }
+
+    // تابع‌های هندلر برای ضبط صدا
+    handleVoiceMouseDown(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.startVoiceRecording();
+    }
+
+    handleVoiceMouseUp(e) {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        if (this.state.isRecording) {
+            this.stopVoiceRecording();
+        }
+    }
+
+    handleVoiceMouseLeave(e) {
+        if (this.state.isRecording) {
+            this.stopVoiceRecording();
+        }
+    }
+
+    handleVoiceTouchStart(e) {
+        e.stopPropagation();
+        e.preventDefault();
+        this.startVoiceRecording();
+    }
+
+    handleVoiceTouchEnd(e) {
+        if (e) {
+            e.stopPropagation();
+            e.preventDefault();
+        }
+        if (this.state.isRecording) {
+            this.stopVoiceRecording();
+        }
+    }
+
     connectWebSocket() {
         try {
             const wsUrl = this.options.backendUrl.replace('http', 'ws');
@@ -346,6 +425,7 @@ class ChatWidget {
             console.error('WebSocket connection failed:', error);
         }
     }
+
     updateConnectionStatus(connected) {
         if (connected) {
             this.elements.connectionStatus.classList.remove('active');
@@ -354,6 +434,7 @@ class ChatWidget {
             this.elements.connectionStatus.classList.add('active');
         }
     }
+
     toggleChat() {
         this.state.isOpen = !this.state.isOpen;
         if (this.state.isOpen) {
@@ -364,15 +445,18 @@ class ChatWidget {
             this.elements.chatWindow.classList.remove('active');
         }
     }
+
     closeChat() {
         this.state.isOpen = false;
         this.elements.chatWindow.classList.remove('active');
     }
+
     resizeTextarea() {
         const textarea = this.elements.messageInput;
         textarea.style.height = 'auto';
         textarea.style.height = Math.min(textarea.scrollHeight, 100) + 'px';
     }
+
     async sendMessage() {
         const message = this.elements.messageInput.value.trim();
         if (!message || this.state.isTyping) return;
@@ -397,6 +481,7 @@ class ChatWidget {
             this.setTyping(false);
         }
     }
+
     async sendToAI(message) {
         try {
             const response = await fetch(`${this.options.backendUrl}/api/chat`, {
@@ -416,6 +501,7 @@ class ChatWidget {
             this.addMessage('system', 'خطا در ارتباط با سرور');
         }
     }
+
     async connectToHuman() {
         if (this.state.operatorConnected || this.state.isConnecting) return;
         this.state.isConnecting = true;
@@ -436,6 +522,8 @@ class ChatWidget {
                 this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-check"></i> متصل به اپراتور`;
                 this.elements.humanSupportBtn.style.background = 'linear-gradient(145deg, #2ecc71, #27ae60)';
                 this.elements.humanSupportBtn.disabled = true;
+                // نمایش دستورالعمل ضبط
+                this.elements.recordInstruction.classList.add('active');
             } else {
                 this.resetHumanSupportButton();
             }
@@ -446,11 +534,13 @@ class ChatWidget {
             this.state.isConnecting = false;
         }
     }
+
     resetHumanSupportButton() {
         this.elements.humanSupportBtn.innerHTML = `<i class="fas fa-user-headset"></i> اتصال به اپراتور انسانی`;
         this.elements.humanSupportBtn.style.background = '#ff6b6b';
         this.elements.humanSupportBtn.disabled = false;
     }
+
     handleOperatorConnected(data) {
         this.state.operatorConnected = true;
         this.elements.operatorInfo.classList.add('active');
@@ -458,6 +548,9 @@ class ChatWidget {
         // فعال کردن دکمه‌های ویس و فایل وقتی اپراتور متصل شد
         this.elements.voiceBtn.classList.add('active');
         this.elements.fileBtn.classList.add('active');
+        
+        // نمایش دستورالعمل ضبط
+        this.elements.recordInstruction.classList.add('active');
         
         this.addMessage('system', data.message || 'اپراتور متصل شد!');
         
@@ -475,17 +568,28 @@ class ChatWidget {
         if (this.state.isRecording) return;
         
         try {
+            // متوقف کردن استریم قبلی اگر وجود دارد
+            this.stopAudioStream();
+            
             // درخواست دسترسی به میکروفون
             const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: true 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    sampleRate: 44100
+                }
             });
             
+            this.state.audioStream = stream;
             this.state.isRecording = true;
             this.state.audioChunks = [];
             this.state.recordingStartTime = Date.now();
             
             // ایجاد MediaRecorder
-            this.state.mediaRecorder = new MediaRecorder(stream);
+            this.state.mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'audio/webm;codecs=opus',
+                audioBitsPerSecond: 128000
+            });
             
             // ذخیره داده‌های ضبط شده
             this.state.mediaRecorder.ondataavailable = (event) => {
@@ -500,11 +604,12 @@ class ChatWidget {
             };
             
             // شروع ضبط
-            this.state.mediaRecorder.start();
+            this.state.mediaRecorder.start(100); // جمع‌آوری داده هر 100ms
             
             // تغییر ظاهر دکمه
             this.elements.voiceBtn.classList.add('recording');
             this.elements.recordingIndicator.classList.add('active');
+            this.elements.recordInstruction.textContent = 'در حال ضبط... رها کنید تا ارسال شود';
             
             // شروع تایمر
             this.startRecordingTimer();
@@ -513,6 +618,9 @@ class ChatWidget {
             this.elements.fileBtn.disabled = true;
             this.elements.sendBtn.disabled = true;
             this.elements.messageInput.disabled = true;
+            this.elements.humanSupportBtn.disabled = true;
+            
+            console.log('Recording started');
             
         } catch (error) {
             console.error('Error accessing microphone:', error);
@@ -524,27 +632,41 @@ class ChatWidget {
     stopVoiceRecording() {
         if (!this.state.isRecording || !this.state.mediaRecorder) return;
         
+        console.log('Stopping recording...');
+        
         // متوقف کردن ضبط
-        this.state.mediaRecorder.stop();
+        if (this.state.mediaRecorder.state === 'recording') {
+            this.state.mediaRecorder.stop();
+        }
         
         // متوقف کردن تایمر
         this.stopRecordingTimer();
         
-        // توقف تمام trackهای stream
-        if (this.state.mediaRecorder.stream) {
-            this.state.mediaRecorder.stream.getTracks().forEach(track => track.stop());
-        }
+        // توقف استریم صدا
+        this.stopAudioStream();
         
         // بازگرداندن ظاهر دکمه
         this.elements.voiceBtn.classList.remove('recording');
         this.elements.recordingIndicator.classList.remove('active');
+        this.elements.recordInstruction.textContent = 'برای ضبط صدا، دکمه میکروفون را نگه دارید و رها کنید تا ارسال شود';
         
         // فعال کردن سایر دکمه‌ها
         this.elements.fileBtn.disabled = false;
         this.elements.sendBtn.disabled = false;
         this.elements.messageInput.disabled = false;
+        this.elements.humanSupportBtn.disabled = false;
         
-        this.addMessage('system', 'در حال پردازش و ارسال پیام صوتی...');
+        // نمایش پیام در حال پردازش
+        this.addMessage('system', 'در حال پردازش پیام صوتی...');
+    }
+    
+    stopAudioStream() {
+        if (this.state.audioStream) {
+            this.state.audioStream.getTracks().forEach(track => {
+                track.stop();
+            });
+            this.state.audioStream = null;
+        }
     }
     
     startRecordingTimer() {
@@ -557,8 +679,9 @@ class ChatWidget {
                 this.elements.recordingTime.textContent = 
                     `${minutes.toString().padStart(2, '0')}:${displaySeconds.toString().padStart(2, '0')}`;
                 
-                // محدودیت زمانی برای ضبط (5 دقیقه)
-                if (seconds >= 300) {
+                // محدودیت زمانی برای ضبط (2 دقیقه)
+                if (seconds >= 120) {
+                    this.addMessage('system', 'حداکثر زمان ضبط (۲ دقیقه) به پایان رسید.');
                     this.stopVoiceRecording();
                 }
             }
@@ -579,9 +702,18 @@ class ChatWidget {
             return;
         }
         
-        const audioBlob = new Blob(this.state.audioChunks, { type: 'audio/ogg; codecs=opus' });
         const duration = Date.now() - this.state.recordingStartTime;
         const durationSeconds = Math.floor(duration / 1000);
+        
+        if (durationSeconds < 1) {
+            this.addMessage('system', 'پیام صوتی خیلی کوتاه بود.');
+            this.state.isRecording = false;
+            this.state.audioChunks = [];
+            return;
+        }
+        
+        // ایجاد فایل صوتی
+        const audioBlob = new Blob(this.state.audioChunks, { type: 'audio/webm' });
         
         // نمایش پیام در چت
         this.addMessage('user', `پیام صوتی (${durationSeconds} ثانیه)`);
@@ -616,7 +748,8 @@ class ChatWidget {
                 
                 try {
                     // ارسال فایل به تلگرام
-                    await this.sendToTelegram(file, 'document', `فایل از کاربر: ${file.name}\nسشن: ${this.state.sessionId}\nصفحه: ${window.location.href}`);
+                    const type = file.type.startsWith('image/') ? 'photo' : 'document';
+                    await this.sendToTelegram(file, type, `فایل از کاربر: ${file.name}\nسشن: ${this.state.sessionId}\nصفحه: ${window.location.href}`);
                     
                     this.addMessage('system', `فایل "${file.name}" با موفقیت ارسال شد.`);
                     
@@ -637,45 +770,72 @@ class ChatWidget {
             return;
         }
         
-        // ایجاد FormData
-        const formData = new FormData();
-        formData.append('chat_id', this.options.telegramChatId);
-        formData.append('caption', caption);
-        
-        // نام فایل برای صدا
-        const fileName = type === 'voice' ? 'voice_message.ogg' : file.name;
-        
-        // اضافه کردن فایل به FormData
-        if (type === 'voice') {
-            formData.append('voice', file, fileName);
-        } else {
-            formData.append('document', file, fileName);
+        // برای فایل‌های خیلی بزرگ پیام خطا نمایش بده
+        if (file.size > 50 * 1024 * 1024) { // 50MB
+            this.addMessage('system', 'حجم فایل بسیار زیاد است (بیشتر از ۵۰ مگابایت). لطفاً فایل کوچکتری ارسال کنید.');
+            return;
         }
         
-        // URL API تلگرام
-        const method = type === 'voice' ? 'sendVoice' : 'sendDocument';
-        const telegramUrl = `https://api.telegram.org/bot${this.options.telegramBotToken}/${method}`;
-        
-        console.log('Sending to Telegram:', { 
-            url: telegramUrl, 
-            type, 
-            fileName, 
-            fileSize: file.size 
-        });
-        
         try {
+            // ایجاد FormData
+            const formData = new FormData();
+            formData.append('chat_id', this.options.telegramChatId);
+            formData.append('caption', caption);
+            
+            // تعیین نوع فایل و متد API
+            let method, fieldName;
+            let fileName = file.name || 'file';
+            
+            switch(type) {
+                case 'voice':
+                    method = 'sendVoice';
+                    fieldName = 'voice';
+                    fileName = 'voice_message.ogg';
+                    // تبدیل webm به ogg اگر لازم است
+                    if (file.type === 'audio/webm') {
+                        // برای سادگی، فایل را همانطور که هست ارسال می‌کنیم
+                        // تلگرام معمولاً webm را هم پشتیبانی می‌کند
+                    }
+                    break;
+                case 'photo':
+                    method = 'sendPhoto';
+                    fieldName = 'photo';
+                    break;
+                default:
+                    method = 'sendDocument';
+                    fieldName = 'document';
+            }
+            
+            formData.append(fieldName, file, fileName);
+            
+            // URL API تلگرام
+            const telegramUrl = `https://api.telegram.org/bot${this.options.telegramBotToken}/${method}`;
+            
+            console.log('Sending to Telegram:', { 
+                method, 
+                fileName, 
+                fileSize: file.size,
+                fileType: file.type
+            });
+            
+            // ارسال درخواست با timeout
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 ثانیه timeout
+            
             const response = await fetch(telegramUrl, {
                 method: 'POST',
-                body: formData
-                // Note: Do NOT set Content-Type header for FormData
+                body: formData,
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             const result = await response.json();
             console.log('Telegram API response:', result);
             
             if (!result.ok) {
                 console.error('Telegram API error:', result);
-                this.addMessage('system', `خطا در ارسال به تلگرام: ${result.description || 'خطای ناشناخته'}`);
+                this.addMessage('system', `خطا در ارسال: ${result.description || 'خطای ناشناخته'}`);
                 throw new Error(`Telegram API error: ${result.description}`);
             }
             
@@ -685,8 +845,14 @@ class ChatWidget {
         } catch (error) {
             console.error('Error sending to Telegram:', error);
             
-            // ارسال از طریق سرور بک‌اند به عنوان راه حل جایگزین
-            await this.sendViaBackend(file, type, caption);
+            // تلاش برای ارسال از طریق بک‌اند به عنوان راه‌حل جایگزین
+            try {
+                await this.sendViaBackend(file, type, caption);
+                this.addMessage('system', 'فایل از طریق سرور جایگزین ارسال شد.');
+            } catch (backendError) {
+                console.error('Backend send also failed:', backendError);
+                this.addMessage('system', 'خطا در ارسال فایل. لطفاً دوباره امتحان کنید.');
+            }
             
             throw error;
         }
@@ -710,14 +876,13 @@ class ChatWidget {
             const result = await response.json();
             
             if (result.success) {
-                this.addMessage('system', 'فایل از طریق سرور ارسال شد.');
                 return result;
             } else {
                 throw new Error('Backend send failed');
             }
         } catch (error) {
             console.error('Backend send error:', error);
-            this.addMessage('system', 'خطا در ارسال فایل. لطفاً دوباره امتحان کنید.');
+            throw error;
         }
     }
     
@@ -731,18 +896,22 @@ class ChatWidget {
     
     // صدا + نوتیفیکیشن + چشمک تب
     playNotificationSound() {
-        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
-        gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-        osc.start(audioCtx.currentTime);
-        osc.stop(audioCtx.currentTime + 0.3);
+        try {
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+            osc.start(audioCtx.currentTime);
+            osc.stop(audioCtx.currentTime + 0.3);
+        } catch (e) {
+            console.log('Could not play notification sound:', e);
+        }
     }
     
     showNotification(count = 1) {
@@ -785,6 +954,7 @@ class ChatWidget {
         if (type === 'user') { icon = '<i class="fas fa-user"></i>'; sender = 'شما'; }
         if (type === 'assistant') { icon = '<i class="fas fa-robot"></i>'; sender = 'پشتیبان هوشمند'; }
         if (type === 'operator') { icon = '<i class="fas fa-user-tie"></i>'; sender = 'اپراتور انسانی'; }
+        if (type === 'system') { icon = '<i class="fas fa-info-circle"></i>'; sender = 'سیستم'; }
         messageEl.innerHTML = `
             ${icon ? `<div class="message-sender">${icon}<span>${sender}</span></div>` : ''}
             <div class="message-text">${this.escapeHtml(text)}</div>
@@ -794,7 +964,7 @@ class ChatWidget {
         this.elements.messagesContainer.scrollTop = this.elements.messagesContainer.scrollHeight;
         this.state.messages.push({ type, text, time });
         // صدا و نوتیفیکیشن فقط برای پیام‌های غیر از کاربر
-        if (type === 'operator' || type === 'assistant' || type === 'system') {
+        if (type !== 'user') {
             this.playNotificationSound();
             if (!this.state.isOpen) this.showNotification();
             if (document.hidden) this.startTabNotification();
