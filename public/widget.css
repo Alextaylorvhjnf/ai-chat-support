@@ -1,42 +1,24 @@
-/* Chat Widget Styles - Instagram Direct Inspired */
-@font-face {
-    font-family: 'Instagram Sans';
-    src: url('https://cdn.jsdelivr.net/gh/rastikerdar/vazir-font@v30.1.0/dist/Vazir.woff2') format('woff2'),
-         url('https://cdn.jsdelivr.net/gh/rastikerdar/vazir-font@v30.1.0/dist/Vazir.woff') format('woff');
-    font-weight: normal;
-    font-style: normal;
-    font-display: swap;
-}
+/* Chat Widget Styles - Instagram Direct Clone */
+@import url('https://cdn.fontcdn.ir/Font/Persian/Vazir/v5.0.0/Vazir.css');
 
-@font-face {
-    font-family: 'Instagram Sans';
-    src: url('https://cdn.jsdelivr.net/gh/rastikerdar/vazir-font@v30.1.0/dist/Vazir-Bold.woff2') format('woff2'),
-         url('https://cdn.jsdelivr.net/gh/rastikerdar/vazir-font@v30.1.0/dist/Vazir-Bold.woff') format('woff');
-    font-weight: bold;
-    font-style: normal;
-    font-display: swap;
-}
-
-/* Reset and Base */
 .chat-widget * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'Instagram Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: 'Vazir', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .chat-widget {
-    font-family: 'Instagram Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     direction: rtl;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* Main Floating Button - Instagram Style */
+/* Instagram Style Floating Button */
 .chat-toggle-btn {
     position: fixed;
-    bottom: 20px;
-    right: 20px;
+    bottom: 24px;
+    left: 24px;
     width: 60px;
     height: 60px;
     border-radius: 50%;
@@ -47,8 +29,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 4px 20px rgba(224, 36, 94, 0.4);
-    z-index: 10000;
+    box-shadow: 0 4px 25px rgba(224, 36, 94, 0.4);
+    z-index: 999999;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     overflow: hidden;
 }
@@ -66,8 +48,8 @@
 }
 
 .chat-toggle-btn:hover {
-    transform: scale(1.1) rotate(5deg);
-    box-shadow: 0 8px 30px rgba(224, 36, 94, 0.6);
+    transform: scale(1.12);
+    box-shadow: 0 8px 35px rgba(224, 36, 94, 0.6);
 }
 
 .chat-toggle-btn:hover::before {
@@ -82,13 +64,13 @@
 }
 
 .chat-toggle-btn:hover i {
-    transform: scale(1.1);
+    transform: scale(1.15);
 }
 
 .notification-badge {
     position: absolute;
-    top: -5px;
-    left: -5px;
+    top: -6px;
+    right: -6px;
     background: linear-gradient(45deg, #FF0069, #FF2D79);
     color: white;
     width: 24px;
@@ -106,20 +88,20 @@
 
 @keyframes pulse {
     0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.1); }
+    50% { transform: scale(1.15); }
 }
 
-/* Chat Window - Instagram Direct Style */
+/* Chat Window - Instagram Direct Clone */
 .chat-window {
     position: fixed;
-    bottom: 90px;
-    right: 20px;
+    bottom: 94px;
+    left: 24px;
     width: 380px;
     height: 580px;
     background: white;
-    border-radius: 12px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(219, 219, 219, 0.3);
-    z-index: 9999;
+    border-radius: 16px;
+    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(219, 219, 219, 0.3);
+    z-index: 999998;
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -134,7 +116,7 @@
     opacity: 1;
 }
 
-/* Header */
+/* Header - Instagram Style */
 .chat-header {
     background: white;
     padding: 16px 20px;
@@ -142,7 +124,7 @@
     align-items: center;
     justify-content: space-between;
     border-bottom: 1px solid #dbdbdb;
-    min-height: 60px;
+    min-height: 64px;
 }
 
 .header-left {
@@ -152,8 +134,8 @@
 }
 
 .chat-logo {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     background: linear-gradient(45deg, #405DE6, #5851DB, #833AB4, #C13584, #E1306C, #FD1D1D);
     display: flex;
@@ -162,26 +144,40 @@
     color: white;
     font-size: 16px;
     font-weight: bold;
+    position: relative;
+    overflow: hidden;
+}
+
+.chat-logo::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('https://shikpooshaan.ir/LOGO.jpeg') center/cover;
 }
 
 .chat-title h3 {
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 700;
     color: #262626;
     margin: 0;
+    line-height: 1.3;
 }
 
 .chat-title p {
-    font-size: 12px;
+    font-size: 13px;
     color: #8e8e8e;
     margin: 2px 0 0 0;
+    line-height: 1.3;
 }
 
 .chat-status {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
+    gap: 8px;
+    font-size: 13px;
     color: #8e8e8e;
 }
 
@@ -195,7 +191,7 @@
 
 @keyframes statusPulse {
     0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
+    50% { opacity: 0.7; }
 }
 
 .close-btn {
@@ -203,14 +199,18 @@
     border: none;
     color: #8e8e8e;
     cursor: pointer;
-    padding: 4px;
+    padding: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: color 0.2s;
+    transition: all 0.2s;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
 }
 
 .close-btn:hover {
+    background: #fafafa;
     color: #262626;
 }
 
@@ -226,10 +226,10 @@
     background: #fafafa;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 12px;
 }
 
-/* Message Bubbles - Instagram Style */
+/* Message Bubbles */
 .message {
     max-width: 75%;
     padding: 12px 16px;
@@ -239,12 +239,13 @@
     word-wrap: break-word;
     line-height: 1.5;
     font-size: 14px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 @keyframes messageSlide {
     from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(12px);
     }
     to {
         opacity: 1;
@@ -254,10 +255,11 @@
 
 .message.user {
     align-self: flex-end;
-    background: #0095f6;
+    background: linear-gradient(135deg, #0095f6, #0077cc);
     color: white;
-    border-bottom-right-radius: 4px;
+    border-bottom-right-radius: 6px;
     margin-left: auto;
+    box-shadow: 0 2px 4px rgba(0, 149, 246, 0.15);
 }
 
 .message.assistant {
@@ -265,7 +267,8 @@
     background: white;
     color: #262626;
     border: 1px solid #dbdbdb;
-    border-bottom-left-radius: 4px;
+    border-bottom-left-radius: 6px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 .message.operator {
@@ -273,35 +276,41 @@
     background: white;
     color: #262626;
     border: 1px solid #dbdbdb;
-    border-bottom-left-radius: 4px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    border-bottom-left-radius: 6px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08);
 }
 
 .message.system {
     align-self: center;
-    background: rgba(0, 0, 0, 0.03);
+    background: rgba(0, 0, 0, 0.04);
     color: #8e8e8e;
-    border-radius: 12px;
+    border-radius: 18px;
     max-width: 85%;
     text-align: center;
     font-size: 13px;
-    padding: 8px 12px;
-    font-weight: 400;
+    padding: 10px 16px;
+    font-weight: 500;
+    line-height: 1.4;
 }
 
 .message-time {
-    font-size: 10px;
-    color: #8e8e8e;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.8);
     margin-top: 4px;
-    text-align: right;
+    text-align: left;
+}
+
+.message.assistant .message-time,
+.message.operator .message-time {
+    color: #8e8e8e;
 }
 
 .message-sender {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 4px;
-    font-size: 12px;
+    margin-bottom: 6px;
+    font-size: 13px;
     font-weight: 600;
     color: #262626;
 }
@@ -310,13 +319,14 @@
     font-size: 12px;
 }
 
-/* Chat Tools - Instagram Style */
+/* Instagram Style Media Tools */
 .chat-tools {
     padding: 12px 20px;
     background: white;
+    border-top: 1px solid #dbdbdb;
     border-bottom: 1px solid #dbdbdb;
     display: flex;
-    gap: 8px;
+    gap: 12px;
     opacity: 0;
     transform: translateY(10px);
     transition: all 0.3s ease;
@@ -330,27 +340,30 @@
 .tool-btn {
     background: white;
     border: 1px solid #dbdbdb;
-    border-radius: 20px;
-    padding: 8px 16px;
+    border-radius: 24px;
+    padding: 10px 20px;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 14px;
     color: #262626;
     transition: all 0.2s;
     flex: 1;
     justify-content: center;
+    font-weight: 500;
 }
 
 .tool-btn:hover {
     background: #fafafa;
     border-color: #c7c7c7;
+    transform: translateY(-1px);
 }
 
 .tool-btn i {
-    font-size: 14px;
+    font-size: 16px;
     color: #8e8e8e;
+    transition: color 0.2s;
 }
 
 .tool-btn.file-btn:hover i {
@@ -362,18 +375,22 @@
 }
 
 .tool-btn.recording {
-    background: #ffe6ee;
+    background: linear-gradient(135deg, #ffe6ee, #ffd0e0);
     border-color: #e1306c;
     color: #e1306c;
     animation: recordingPulse 1.5s infinite;
 }
 
+.tool-btn.recording i {
+    color: #e1306c;
+}
+
 @keyframes recordingPulse {
     0%, 100% { 
-        background: #ffe6ee;
+        background: linear-gradient(135deg, #ffe6ee, #ffd0e0);
     }
     50% { 
-        background: #ffd0e0;
+        background: linear-gradient(135deg, #ffd0e0, #ffb8d0);
     }
 }
 
@@ -382,9 +399,8 @@
 }
 
 .upload-progress {
-    height: 2px;
+    height: 3px;
     background: #dbdbdb;
-    margin: 0 20px;
     overflow: hidden;
     display: none;
 }
@@ -395,16 +411,15 @@
 
 .progress-bar {
     height: 100%;
-    background: #0095f6;
+    background: linear-gradient(90deg, #0095f6, #0077cc);
     width: 0%;
     transition: width 0.3s;
 }
 
-/* Input Area - Instagram Style */
+/* Instagram Style Input Area */
 .chat-input-area {
     padding: 16px 20px;
     background: white;
-    border-top: 1px solid #dbdbdb;
 }
 
 .input-wrapper {
@@ -417,30 +432,32 @@
 .message-input {
     flex: 1;
     border: 1px solid #dbdbdb;
-    border-radius: 22px;
-    padding: 12px 16px;
-    font-size: 14px;
+    border-radius: 24px;
+    padding: 14px 18px;
+    font-size: 15px;
     resize: none;
-    max-height: 100px;
-    min-height: 44px;
+    max-height: 120px;
+    min-height: 48px;
     transition: all 0.2s;
-    font-family: inherit;
+    font-family: 'Vazir', sans-serif;
     line-height: 1.5;
     background: #fafafa;
     color: #262626;
+    font-weight: 400;
 }
 
 .message-input:focus {
     outline: none;
-    border-color: #c7c7c7;
+    border-color: #a8a8a8;
     background: white;
+    box-shadow: 0 0 0 1px rgba(0, 149, 246, 0.1);
 }
 
 .send-btn {
-    width: 44px;
-    height: 44px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
-    background: #0095f6;
+    background: linear-gradient(135deg, #0095f6, #0077cc);
     border: none;
     color: white;
     cursor: pointer;
@@ -449,58 +466,73 @@
     justify-content: center;
     transition: all 0.2s;
     flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 149, 246, 0.25);
 }
 
 .send-btn:hover:not(:disabled) {
-    background: #0077cc;
+    background: linear-gradient(135deg, #0077cc, #005fa3);
     transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0, 149, 246, 0.35);
 }
 
 .send-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+    transform: none !important;
 }
 
 .send-btn i {
-    font-size: 16px;
+    font-size: 18px;
 }
 
+/* Instagram Style Human Support Button */
 .human-support-btn {
     width: 100%;
-    background: white;
+    background: linear-gradient(135deg, #f0f8ff, #e3f2fd);
     color: #0095f6;
     border: 1px solid #0095f6;
-    padding: 10px 16px;
-    border-radius: 8px;
-    font-size: 14px;
+    padding: 14px 20px;
+    border-radius: 12px;
+    font-size: 15px;
     font-weight: 600;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    transition: all 0.2s;
+    gap: 12px;
+    transition: all 0.3s;
+    box-shadow: 0 2px 8px rgba(0, 149, 246, 0.1);
 }
 
 .human-support-btn:hover:not(:disabled) {
-    background: #f0f8ff;
+    background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 149, 246, 0.15);
 }
 
 .human-support-btn:disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    background: white;
+    background: #f5f5f5;
+    border-color: #dbdbdb;
+    color: #8e8e8e;
+    transform: none !important;
 }
 
 .human-support-btn i {
-    font-size: 14px;
+    font-size: 18px;
+    transition: transform 0.3s;
+}
+
+.human-support-btn:hover:not(:disabled) i {
+    transform: scale(1.1);
 }
 
 /* Operator Info */
 .operator-info {
     padding: 16px 20px;
-    background: #fafafa;
-    border-top: 1px solid #dbdbdb;
+    background: linear-gradient(135deg, #f8f9ff, #eef1ff);
+    border-top: 1px solid #e0e7ff;
     display: none;
     animation: slideUp 0.3s ease;
 }
@@ -523,41 +555,56 @@
 .operator-card {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 16px;
+    animation: fadeInScale 0.4s ease;
+}
+
+@keyframes fadeInScale {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 .operator-avatar {
-    width: 40px;
-    height: 40px;
+    width: 48px;
+    height: 48px;
     border-radius: 50%;
-    background: linear-gradient(45deg, #405DE6, #5851DB, #833AB4, #C13584, #E1306C, #FD1D1D);
+    background: linear-gradient(135deg, #405DE6, #833AB4);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 16px;
+    font-size: 20px;
+    box-shadow: 0 4px 12px rgba(64, 93, 230, 0.25);
+    flex-shrink: 0;
 }
 
 .operator-details h4 {
     color: #262626;
-    margin-bottom: 2px;
-    font-size: 14px;
-    font-weight: 600;
+    margin-bottom: 4px;
+    font-size: 16px;
+    font-weight: 700;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 10px;
 }
 
 .operator-details p {
-    color: #8e8e8e;
-    font-size: 12px;
+    color: #666;
+    font-size: 14px;
     line-height: 1.4;
+    font-weight: 400;
 }
 
 /* Connection Status */
 .connection-status {
-    padding: 12px 20px;
-    background: #fff8e1;
+    padding: 14px 20px;
+    background: linear-gradient(135deg, #fff8e1, #ffecb3);
     border-top: 1px solid #ffecb3;
     display: none;
     animation: slideUp 0.3s ease;
@@ -570,13 +617,20 @@
 .status-message {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
     color: #ff8f00;
-    font-size: 13px;
+    font-size: 14px;
+    font-weight: 500;
 }
 
 .status-message i {
-    font-size: 14px;
+    font-size: 16px;
+    animation: wifiPulse 2s ease-in-out infinite;
+}
+
+@keyframes wifiPulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
 }
 
 /* Typing Indicator */
@@ -584,10 +638,11 @@
     padding: 0 20px 12px;
     display: flex;
     align-items: center;
-    gap: 8px;
-    font-size: 12px;
+    gap: 12px;
+    font-size: 13px;
     color: #8e8e8e;
     display: none;
+    font-weight: 500;
 }
 
 .typing-indicator.active {
@@ -596,12 +651,12 @@
 
 .typing-dots {
     display: flex;
-    gap: 3px;
+    gap: 4px;
 }
 
 .typing-dots span {
-    width: 6px;
-    height: 6px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background: #8e8e8e;
     animation: typingBounce 1.4s ease-in-out infinite;
@@ -620,8 +675,135 @@
         transform: translateY(0);
     }
     50% { 
-        transform: translateY(-4px);
+        transform: translateY(-5px);
     }
+}
+
+/* Instagram Style Voice Preview */
+.voice-preview {
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #f8f9ff, #eef1ff);
+    border-top: 1px solid #e0e7ff;
+    display: none;
+    animation: slideUp 0.3s ease;
+}
+
+.voice-preview.active {
+    display: block;
+}
+
+.voice-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.voice-wave {
+    flex: 1;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+}
+
+.wave-bar {
+    width: 3px;
+    height: 8px;
+    background: linear-gradient(180deg, #0095f6, #0077cc);
+    border-radius: 1.5px;
+    animation: wave 1s ease-in-out infinite;
+}
+
+.wave-bar:nth-child(2) { animation-delay: 0.1s; height: 12px; }
+.wave-bar:nth-child(3) { animation-delay: 0.2s; height: 16px; }
+.wave-bar:nth-child(4) { animation-delay: 0.3s; height: 20px; }
+.wave-bar:nth-child(5) { animation-delay: 0.4s; height: 24px; }
+.wave-bar:nth-child(6) { animation-delay: 0.5s; height: 20px; }
+.wave-bar:nth-child(7) { animation-delay: 0.6s; height: 16px; }
+.wave-bar:nth-child(8) { animation-delay: 0.7s; height: 12px; }
+
+@keyframes wave {
+    0%, 100% { height: 8px; }
+    50% { height: 24px; }
+}
+
+.voice-duration {
+    font-size: 14px;
+    color: #666;
+    font-weight: 600;
+    min-width: 50px;
+}
+
+/* Instagram Style File Preview */
+.file-preview {
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #f8f9ff, #eef1ff);
+    border-top: 1px solid #e0e7ff;
+    display: none;
+    animation: slideUp 0.3s ease;
+}
+
+.file-preview.active {
+    display: block;
+}
+
+.preview-content {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.file-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #0095f6, #0077cc);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    box-shadow: 0 4px 12px rgba(0, 149, 246, 0.25);
+    flex-shrink: 0;
+}
+
+.file-info {
+    flex: 1;
+}
+
+.file-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: #262626;
+    margin-bottom: 4px;
+    line-height: 1.3;
+}
+
+.file-size {
+    font-size: 13px;
+    color: #8e8e8e;
+    font-weight: 400;
+}
+
+.cancel-upload {
+    background: none;
+    border: none;
+    color: #8e8e8e;
+    cursor: pointer;
+    padding: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+}
+
+.cancel-upload:hover {
+    background: rgba(0, 0, 0, 0.05);
+    color: #262626;
 }
 
 /* Scrollbar Styling */
@@ -642,197 +824,28 @@
     background: #c7c7c7;
 }
 
-/* File Upload Preview */
-.file-preview {
-    margin: 8px 20px;
-    padding: 12px;
-    background: #fafafa;
-    border: 1px solid #dbdbdb;
-    border-radius: 8px;
-    display: none;
-}
-
-.file-preview.active {
-    display: block;
-    animation: slideUp 0.3s ease;
-}
-
-.preview-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.file-icon {
-    width: 36px;
-    height: 36px;
-    background: #0095f6;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 16px;
-}
-
-.file-info {
-    flex: 1;
-}
-
-.file-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: #262626;
-    margin-bottom: 2px;
-}
-
-.file-size {
-    font-size: 11px;
-    color: #8e8e8e;
-}
-
-.cancel-upload {
-    background: none;
-    border: none;
-    color: #8e8e8e;
-    cursor: pointer;
-    padding: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: color 0.2s;
-}
-
-.cancel-upload:hover {
-    color: #262626;
-}
-
-/* Voice Recording Preview */
-.voice-preview {
-    margin: 8px 20px;
-    padding: 12px;
-    background: #fafafa;
-    border: 1px solid #dbdbdb;
-    border-radius: 8px;
-    display: none;
-}
-
-.voice-preview.active {
-    display: block;
-    animation: slideUp 0.3s ease;
-}
-
-.voice-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.voice-wave {
-    flex: 1;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.wave-bar {
-    width: 2px;
-    height: 4px;
-    background: #0095f6;
-    margin: 0 1px;
-    border-radius: 1px;
-    animation: wave 1s ease-in-out infinite;
-}
-
-.wave-bar:nth-child(2) { animation-delay: 0.1s; height: 8px; }
-.wave-bar:nth-child(3) { animation-delay: 0.2s; height: 12px; }
-.wave-bar:nth-child(4) { animation-delay: 0.3s; height: 16px; }
-.wave-bar:nth-child(5) { animation-delay: 0.4s; height: 20px; }
-.wave-bar:nth-child(6) { animation-delay: 0.5s; height: 16px; }
-.wave-bar:nth-child(7) { animation-delay: 0.6s; height: 12px; }
-.wave-bar:nth-child(8) { animation-delay: 0.7s; height: 8px; }
-
-@keyframes wave {
-    0%, 100% { height: 4px; }
-    50% { height: 20px; }
-}
-
-.voice-duration {
-    font-size: 12px;
-    color: #8e8e8e;
-    min-width: 40px;
-}
-
 /* Responsive Design */
 @media (max-width: 480px) {
     .chat-window {
-        width: 100vw;
-        height: 100vh;
-        bottom: 0;
-        right: 0;
-        border-radius: 0;
+        width: calc(100vw - 32px);
+        height: 70vh;
+        bottom: 88px;
+        left: 16px;
     }
     
     .chat-toggle-btn {
         bottom: 20px;
-        right: 20px;
+        left: 20px;
         width: 56px;
         height: 56px;
     }
     
-    .chat-messages {
-        padding: 16px;
-    }
-    
-    .chat-input-area,
-    .chat-header,
-    .operator-info,
-    .connection-status {
-        padding: 12px 16px;
+    .message {
+        max-width: 85%;
     }
 }
 
-/* Emoji Picker (Optional) */
-.emoji-picker {
-    position: absolute;
-    bottom: 100%;
-    right: 0;
-    background: white;
-    border: 1px solid #dbdbdb;
-    border-radius: 8px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
-    padding: 8px;
-    display: none;
-    z-index: 10001;
-}
-
-.emoji-picker.active {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
-    animation: fadeIn 0.2s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-.emoji-btn {
-    background: none;
-    border: none;
-    padding: 6px;
-    cursor: pointer;
-    font-size: 18px;
-    transition: transform 0.2s;
-}
-
-.emoji-btn:hover {
-    transform: scale(1.2);
-}
-
-/* Message Reactions (Optional) */
+/* Instagram Like Reactions */
 .message-reaction {
     position: absolute;
     top: -8px;
@@ -840,64 +853,37 @@
     background: white;
     border: 1px solid #dbdbdb;
     border-radius: 12px;
-    padding: 4px;
+    padding: 4px 8px;
     font-size: 12px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    color: #262626;
     display: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .message:hover .message-reaction {
     display: block;
 }
 
-/* Read Receipts */
-.read-receipt {
-    font-size: 10px;
-    color: #0095f6;
-    margin-top: 2px;
+/* Message Seen Indicator */
+.seen-indicator {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
+    font-size: 11px;
+    color: #8e8e8e;
+    margin-top: 4px;
 }
 
-/* Message Menu (Optional) */
-.message-menu {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    right: -24px;
-    opacity: 0;
-    transition: opacity 0.2s;
-}
-
-.message:hover .message-menu {
-    opacity: 1;
-}
-
-.menu-btn {
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    border: none;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
+.seen-indicator i {
     font-size: 12px;
-    transition: background 0.2s;
+    color: #0095f6;
 }
 
-.menu-btn:hover {
-    background: rgba(0, 0, 0, 0.9);
-}
-
-/* Loading States */
+/* Loading Animation */
 .loading-spinner {
     display: inline-block;
-    width: 16px;
-    height: 16px;
+    width: 18px;
+    height: 18px;
     border: 2px solid rgba(0, 149, 246, 0.3);
     border-radius: 50%;
     border-top-color: #0095f6;
@@ -917,13 +903,15 @@
     will-change: transform, opacity;
 }
 
-/* Theme Support (Optional) */
+/* Dark Mode Support */
 @media (prefers-color-scheme: dark) {
     .chat-window,
     .chat-header,
     .chat-input-area,
     .chat-tools,
-    .operator-info {
+    .operator-info,
+    .file-preview,
+    .voice-preview {
         background: #121212;
         border-color: #363636;
     }
@@ -951,11 +939,21 @@
         color: #f5f5f5;
     }
     
+    .tool-btn:hover {
+        background: #363636;
+    }
+    
     .chat-title h3 {
         color: #f5f5f5;
     }
     
     .chat-title p {
         color: #a8a8a8;
+    }
+    
+    .human-support-btn {
+        background: linear-gradient(135deg, #1a1a1a, #262626);
+        border-color: #363636;
+        color: #f5f5f5;
     }
 }
